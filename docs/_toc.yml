@@ -1,0 +1,7 @@
+format: jb-book
+root: intro
+chapters:
+  - file: tutorial
+  - file: notebooks/quickstart
+  - file: notebooks/benchmarks
+  - file: api

@@ -1,0 +1,89 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "micro"
+version = "0.1.0"
+description = "Conditional microdata synthesis using normalizing flows"
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "Cosilico", email = "hello@cosilico.ai" }
+]
+keywords = [
+    "microdata",
+    "synthesis",
+    "normalizing-flows",
+    "survey-data",
+    "privacy",
+    "imputation",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0",
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "scipy>=1.10",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.1",
+    "mypy>=1.0",
+]
+benchmark = [
+    "sdv>=1.0",  # CT-GAN, TVAE, Copulas
+    "scikit-learn>=1.3",  # For QRF comparison
+    "matplotlib>=3.7",
+    "seaborn>=0.12",
+]
+docs = [
+    "jupyter-book>=0.15",
+    "sphinx>=6.0",
+    "myst-nb>=0.17",
+    "sphinx-autodoc-typehints>=1.23",
+]
+all = [
+    "micro[dev,benchmark,docs]",
+]
+
+[project.urls]
+Homepage = "https://github.com/CosilicoAI/micro"
+Documentation = "https://cosilicoai.github.io/micro"
+Repository = "https://github.com/CosilicoAI/micro"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/micro"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]  # Line length handled by formatter
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
