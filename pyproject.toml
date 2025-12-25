@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "micro"
+name = "microsynth"
 version = "0.1.0"
 description = "Conditional microdata synthesis using normalizing flows"
 readme = "README.md"
@@ -58,7 +58,7 @@ docs = [
     "sphinx-autodoc-typehints>=1.23",
 ]
 all = [
-    "micro[dev,benchmark,docs]",
+    "microsynth[dev,benchmark,docs]",
 ]
 
 [project.urls]
