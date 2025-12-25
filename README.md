@@ -23,6 +23,8 @@ pip install microplex
 
 ## Quick Start
 
+### Synthesis
+
 ```python
 from microplex import Synthesizer
 import pandas as pd
@@ -44,6 +46,30 @@ new_demographics = pd.read_csv("demographics_only.csv")
 synthetic = synth.generate(new_demographics)
 ```
 
+### Reweighting
+
+```python
+from microplex import Reweighter
+import pandas as pd
+
+# Load synthetic microdata
+synthetic_data = pd.read_csv("synthetic_microdata.csv")
+
+# Define population targets (official statistics)
+targets = {
+    "state": {"CA": 39_500_000, "NY": 19_500_000, "TX": 29_000_000},
+    "age_group": {"0-17": 22_000_000, "18-64": 54_000_000, "65+": 12_000_000},
+}
+
+# Sparse reweighting to match targets
+reweighter = Reweighter(sparsity="l0")  # Minimize number of records used
+weighted_data = reweighter.fit_transform(synthetic_data, targets)
+
+# Check sparsity
+stats = reweighter.get_sparsity_stats()
+print(f"Using {stats['n_nonzero']} of {stats['n_records']} records")
+```
+
 ## Why `microplex`?
 
 | Feature | microplex | CT-GAN | TVAE | synthpop |
@@ -56,12 +82,21 @@ synthetic = synth.generate(new_demographics)
 
 ### Use Cases
 
+**Synthesis:**
 - **Survey enhancement**: Impute income variables from tax data onto census demographics
 - **Privacy-preserving synthesis**: Generate synthetic data that preserves statistical properties without copying real records
 - **Data fusion**: Combine variables from multiple surveys with different sample designs
 - **Missing data imputation**: Fill in missing values conditioned on observed variables
 
+**Reweighting:**
+- **Population calibration**: Match synthetic microdata to official population statistics (Census, ACS)
+- **Geographic targeting**: Ensure correct distributions at state, county, and tract levels
+- **Sparse sampling**: Minimize number of records while preserving statistical accuracy
+- **Survey weighting**: Adjust sample weights to match known population margins
+
 ## Architecture
+
+### Synthesizer
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -79,6 +114,32 @@ synthetic = synth.generate(new_demographics)
 │  │ Context  │───▶│ Zero + Flow  │───▶│  Inverse     │  │
 │  │  Vars    │    │   Sampling   │    │  Transform   │  │
 │  └──────────┘    └──────────────┘    └──────────────┘  │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Reweighter
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                      Reweighter                          │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│  Optimization Problem:                                   │
+│     min ||w||_p  subject to  A @ w = b                  │
+│                                                          │
+│  where:                                                  │
+│    w: weight vector (decision variables)                │
+│    A: constraint matrix (margin indicators)             │
+│    b: target vector (population totals)                 │
+│    p: sparsity norm (0, 1, or 2)                        │
+│                                                          │
+│  Backends:                                               │
+│    - scipy:  L1/L2 (linprog, minimize)                  │
+│    - cvxpy:  L0/L1/L2 (convex optimization)             │
+│                                                          │
+│  L0 Approximation:                                       │
+│    Iterative Reweighted L1 (IRL1)                       │
 │                                                          │
 └─────────────────────────────────────────────────────────┘
 ```

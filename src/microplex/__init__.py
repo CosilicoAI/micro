@@ -19,6 +19,7 @@ Example:
 """
 
 from microplex.synthesizer import Synthesizer
+from microplex.reweighting import Reweighter
 from microplex.transforms import (
     ZeroInflatedTransform,
     LogTransform,
@@ -36,8 +37,9 @@ from microplex.discrete import (
 __version__ = "0.1.0"
 
 __all__ = [
-    # Main class
+    # Main classes
     "Synthesizer",
+    "Reweighter",
     # Transforms
     "ZeroInflatedTransform",
     "LogTransform",

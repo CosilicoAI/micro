@@ -4,4 +4,6 @@ chapters:
   - file: tutorial
   - file: notebooks/quickstart
   - file: notebooks/benchmarks
+  - file: reweighting
+  - file: hierarchical_synthesis
   - file: api
