@@ -20,6 +20,11 @@ Example:
 
 from microplex.synthesizer import Synthesizer
 from microplex.reweighting import Reweighter
+from microplex.hierarchical import (
+    HierarchicalSynthesizer,
+    HouseholdSchema,
+    prepare_cps_for_hierarchical,
+)
 from microplex.transforms import (
     ZeroInflatedTransform,
     LogTransform,
@@ -40,6 +45,10 @@ __all__ = [
     # Main classes
     "Synthesizer",
     "Reweighter",
+    # Hierarchical
+    "HierarchicalSynthesizer",
+    "HouseholdSchema",
+    "prepare_cps_for_hierarchical",
     # Transforms
     "ZeroInflatedTransform",
     "LogTransform",

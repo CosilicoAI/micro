@@ -16,7 +16,8 @@ Metrics:
 5. Energy Distance: Another multivariate two-sample test
 """
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -326,6 +327,136 @@ def compute_energy_distance(
     return float(energy_dist)
 
 
+def distance_correlation(X: np.ndarray, Y: np.ndarray) -> float:
+    """
+    Compute Distance Correlation between two variables.
+
+    dCor = 0 iff X and Y are independent. Unlike Pearson correlation,
+    distance correlation captures ALL types of dependence (linear,
+    nonlinear, non-monotonic).
+
+    This is critical for evaluating synthetic data because:
+    - Pearson corr can miss nonlinear relationships
+    - A model might match linear correlation but miss the shape
+    - dCor captures the full association structure
+
+    Args:
+        X: First variable (shape: [n_samples])
+        Y: Second variable (shape: [n_samples])
+
+    Returns:
+        Distance correlation (0 to 1, 0 = independent)
+    """
+    n = len(X)
+    if n < 2:
+        return 0.0
+
+    # Reshape to column vectors if needed
+    X = np.asarray(X).reshape(-1)
+    Y = np.asarray(Y).reshape(-1)
+
+    # Compute pairwise distance matrices
+    a = np.abs(X[:, None] - X[None, :])  # |X_i - X_j|
+    b = np.abs(Y[:, None] - Y[None, :])  # |Y_i - Y_j|
+
+    # Double-center the distance matrices
+    A = a - a.mean(axis=0, keepdims=True) - a.mean(axis=1, keepdims=True) + a.mean()
+    B = b - b.mean(axis=0, keepdims=True) - b.mean(axis=1, keepdims=True) + b.mean()
+
+    # Distance covariance squared
+    dcov2 = (A * B).sum() / (n * n)
+
+    # Distance variances
+    dvar_x = (A * A).sum() / (n * n)
+    dvar_y = (B * B).sum() / (n * n)
+
+    # Distance correlation
+    if dvar_x <= 0 or dvar_y <= 0:
+        return 0.0
+
+    dcor = np.sqrt(dcov2 / np.sqrt(dvar_x * dvar_y))
+    return float(np.clip(dcor, 0, 1))
+
+
+def compute_pairwise_dcor(
+    data: pd.DataFrame,
+    variables: List[str],
+) -> pd.DataFrame:
+    """
+    Compute distance correlation matrix for all variable pairs.
+
+    Args:
+        data: DataFrame with variables
+        variables: List of variable names
+
+    Returns:
+        DataFrame with pairwise distance correlations
+    """
+    n_vars = len(variables)
+    dcor_matrix = np.zeros((n_vars, n_vars))
+
+    for i, var1 in enumerate(variables):
+        for j, var2 in enumerate(variables):
+            if i == j:
+                dcor_matrix[i, j] = 1.0
+            elif i < j:
+                dcor_matrix[i, j] = distance_correlation(
+                    data[var1].values, data[var2].values
+                )
+                dcor_matrix[j, i] = dcor_matrix[i, j]
+
+    return pd.DataFrame(dcor_matrix, index=variables, columns=variables)
+
+
+def compute_dcor_error(
+    holdout_data: pd.DataFrame,
+    synthetic_data: pd.DataFrame,
+    variables: List[str],
+) -> Dict[str, float]:
+    """
+    Compare distance correlation structure between holdout and synthetic.
+
+    This measures whether the synthetic data captures the full pairwise
+    association structure, including nonlinear relationships.
+
+    Args:
+        holdout_data: Real holdout data
+        synthetic_data: Synthetic data to evaluate
+        variables: Variables to compare
+
+    Returns:
+        Dict with:
+            - mean_dcor_error: Mean absolute difference in dCor across pairs
+            - max_dcor_error: Worst pair
+            - dcor_errors: Per-pair errors
+            - holdout_dcor: dCor matrix for holdout
+            - synthetic_dcor: dCor matrix for synthetic
+    """
+    # Compute dCor matrices
+    holdout_dcor = compute_pairwise_dcor(holdout_data, variables)
+    synthetic_dcor = compute_pairwise_dcor(synthetic_data, variables)
+
+    # Compute errors (upper triangle only, excluding diagonal)
+    n_vars = len(variables)
+    errors = {}
+    all_errors = []
+
+    for i in range(n_vars):
+        for j in range(i + 1, n_vars):
+            pair = f"{variables[i]}_vs_{variables[j]}"
+            error = abs(holdout_dcor.iloc[i, j] - synthetic_dcor.iloc[i, j])
+            errors[pair] = error
+            all_errors.append(error)
+
+    return {
+        'mean_dcor_error': float(np.mean(all_errors)) if all_errors else 0.0,
+        'max_dcor_error': float(np.max(all_errors)) if all_errors else 0.0,
+        'dcor_errors': errors,
+        'holdout_dcor': holdout_dcor,
+        'synthetic_dcor': synthetic_dcor,
+    }
+
+
 def compute_variogram_score(
     X: np.ndarray,
     Y: np.ndarray,
@@ -346,8 +477,11 @@ def compute_variogram_score(
     - i, j index VARIABLES (not records)
     - p is typically 0.5 (default) or 1
 
-    Key insight: If the model captures marginals perfectly but breaks
-    correlations, the variogram score will be high.
+    ⚠️ CAVEAT: Variogram can penalize models that capture NONLINEAR
+    relationships! A linear model produces smooth pairwise distances
+    and may score better, while a model capturing true nonlinear
+    structure has more variance. ALWAYS check scatterplots alongside
+    this metric. (Lesson from PolicyEngine experience)
 
     Args:
         X: Synthetic samples (shape: [n_samples, n_features])
@@ -450,6 +584,10 @@ def compute_multivariate_metrics(
     # 6. Variogram Score (Correlation Structure)
     print("Computing Variogram Score (pairwise correlation quality)...")
     results['variogram_score'] = compute_variogram_score(synthetic_norm, holdout_norm)
+
+    # 7. Distance Correlation Error (Nonlinear Association Structure)
+    print("Computing Distance Correlation error (captures nonlinear relationships)...")
+    results['dcor'] = compute_dcor_error(holdout_data, synthetic_data, variables)
 
     return results
 
