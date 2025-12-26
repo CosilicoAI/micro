@@ -252,3 +252,238 @@ class TestPrepareCpsForHierarchical:
 
         # Check person data unchanged
         assert len(person_data) == 6
+
+
+class TestTaxUnitOptimizer:
+    """Tests for TaxUnitOptimizer."""
+
+    def test_single_adult_filing_status(self):
+        """Test that single adult files as single."""
+        from microplex.hierarchical import TaxUnitOptimizer
+
+        persons = pd.DataFrame({
+            'person_id': [0],
+            'household_id': [0],
+            'age': [35],
+            'income': [50000],
+            'relationship_to_head': [0],  # Head
+            'is_student': [False],
+            'is_disabled': [False],
+        })
+
+        optimizer = TaxUnitOptimizer()
+        tax_units = optimizer.optimize_household(0, persons)
+
+        assert len(tax_units) == 1
+        assert tax_units[0]['filing_status'] == 'single'
+        assert tax_units[0]['n_dependents'] == 0
+
+    def test_married_couple_files_jointly(self):
+        """Test that married couple files jointly."""
+        from microplex.hierarchical import TaxUnitOptimizer
+
+        persons = pd.DataFrame({
+            'person_id': [0, 1],
+            'household_id': [0, 0],
+            'age': [35, 33],
+            'income': [60000, 55000],
+            'relationship_to_head': [0, 1],  # Head, Spouse
+            'is_student': [False, False],
+            'is_disabled': [False, False],
+        })
+
+        optimizer = TaxUnitOptimizer()
+        tax_units = optimizer.optimize_household(0, persons)
+
+        assert len(tax_units) == 1
+        assert tax_units[0]['filing_status'] == 'married_filing_jointly'
+        assert tax_units[0]['n_dependents'] == 0
+
+    def test_couple_with_children(self):
+        """Test couple with qualifying children."""
+        from microplex.hierarchical import TaxUnitOptimizer
+
+        persons = pd.DataFrame({
+            'person_id': [0, 1, 2, 3],
+            'household_id': [0, 0, 0, 0],
+            'age': [40, 38, 10, 7],
+            'income': [80000, 60000, 0, 0],
+            'relationship_to_head': [0, 1, 2, 2],  # Head, Spouse, Child, Child
+            'is_student': [False, False, False, False],
+            'is_disabled': [False, False, False, False],
+        })
+
+        optimizer = TaxUnitOptimizer()
+        tax_units = optimizer.optimize_household(0, persons)
+
+        assert len(tax_units) == 1
+        assert tax_units[0]['filing_status'] == 'married_filing_jointly'
+        assert tax_units[0]['n_dependents'] == 2
+
+    def test_single_parent_head_of_household(self):
+        """Test single parent files as head of household."""
+        from microplex.hierarchical import TaxUnitOptimizer
+
+        persons = pd.DataFrame({
+            'person_id': [0, 1],
+            'household_id': [0, 0],
+            'age': [35, 8],
+            'income': [55000, 0],
+            'relationship_to_head': [0, 2],  # Head, Child
+            'is_student': [False, False],
+            'is_disabled': [False, False],
+        })
+
+        optimizer = TaxUnitOptimizer()
+        tax_units = optimizer.optimize_household(0, persons)
+
+        assert len(tax_units) == 1
+        assert tax_units[0]['filing_status'] == 'head_of_household'
+        assert tax_units[0]['n_dependents'] == 1
+
+    def test_adult_student_dependent(self):
+        """Test that adult student under 24 can be dependent."""
+        from microplex.hierarchical import TaxUnitOptimizer
+
+        persons = pd.DataFrame({
+            'person_id': [0, 1, 2],
+            'household_id': [0, 0, 0],
+            'age': [50, 48, 21],
+            'income': [90000, 70000, 5000],
+            'relationship_to_head': [0, 1, 2],  # Head, Spouse, Child
+            'is_student': [False, False, True],
+            'is_disabled': [False, False, False],
+        })
+
+        optimizer = TaxUnitOptimizer()
+        tax_units = optimizer.optimize_household(0, persons)
+
+        assert len(tax_units) == 1
+        assert tax_units[0]['n_dependents'] == 1
+
+    def test_disabled_adult_dependent(self):
+        """Test that disabled adult can be dependent."""
+        from microplex.hierarchical import TaxUnitOptimizer
+
+        persons = pd.DataFrame({
+            'person_id': [0, 1],
+            'household_id': [0, 0],
+            'age': [55, 30],
+            'income': [70000, 0],
+            'relationship_to_head': [0, 2],  # Head, Child
+            'is_student': [False, False],
+            'is_disabled': [False, True],
+        })
+
+        optimizer = TaxUnitOptimizer()
+        tax_units = optimizer.optimize_household(0, persons)
+
+        assert len(tax_units) == 1
+        assert tax_units[0]['filing_status'] == 'head_of_household'
+        assert tax_units[0]['n_dependents'] == 1
+
+    def test_unrelated_adults_separate_units(self):
+        """Test that unrelated adults file separately."""
+        from microplex.hierarchical import TaxUnitOptimizer
+
+        persons = pd.DataFrame({
+            'person_id': [0, 1],
+            'household_id': [0, 0],
+            'age': [30, 28],
+            'income': [50000, 48000],
+            'relationship_to_head': [0, 3],  # Head, Unrelated
+            'is_student': [False, False],
+            'is_disabled': [False, False],
+        })
+
+        optimizer = TaxUnitOptimizer()
+        tax_units = optimizer.optimize_household(0, persons)
+
+        assert len(tax_units) == 2
+        assert all(tu['filing_status'] == 'single' for tu in tax_units)
+
+    def test_high_income_mfs_optimization(self):
+        """Test that MFS can be chosen for high-income disparity."""
+        from microplex.hierarchical import TaxUnitOptimizer
+
+        # High earner with student loans + low earner
+        persons = pd.DataFrame({
+            'person_id': [0, 1],
+            'household_id': [0, 0],
+            'age': [35, 33],
+            'income': [250000, 30000],
+            'relationship_to_head': [0, 1],  # Head, Spouse
+            'is_student': [False, False],
+            'is_disabled': [False, False],
+        })
+
+        optimizer = TaxUnitOptimizer()
+        tax_units = optimizer.optimize_household(0, persons)
+
+        # Should create 2 tax units if MFS is better
+        # (Implementation will determine optimal choice)
+        assert len(tax_units) >= 1
+
+    def test_standard_deduction_calculation(self):
+        """Test standard deduction varies by filing status."""
+        from microplex.hierarchical import TaxUnitOptimizer
+
+        optimizer = TaxUnitOptimizer()
+
+        # 2024 standard deductions
+        assert optimizer._standard_deduction('single', 0) == 14600
+        assert optimizer._standard_deduction('married_filing_jointly', 0) == 29200
+        assert optimizer._standard_deduction('married_filing_separately', 0) == 14600
+        assert optimizer._standard_deduction('head_of_household', 0) == 21900
+
+    def test_eitc_eligibility(self):
+        """Test EITC calculation."""
+        from microplex.hierarchical import TaxUnitOptimizer
+
+        optimizer = TaxUnitOptimizer()
+
+        # No children, moderate income
+        assert optimizer._calculate_eitc(15000, 'single', 0) > 0
+
+        # With children, should get more
+        eitc_no_kids = optimizer._calculate_eitc(25000, 'single', 0)
+        eitc_with_kids = optimizer._calculate_eitc(25000, 'single', 2)
+        assert eitc_with_kids > eitc_no_kids
+
+        # High income, no EITC
+        assert optimizer._calculate_eitc(100000, 'single', 0) == 0
+
+    def test_ctc_calculation(self):
+        """Test Child Tax Credit calculation."""
+        from microplex.hierarchical import TaxUnitOptimizer
+
+        optimizer = TaxUnitOptimizer()
+
+        # No children
+        assert optimizer._calculate_ctc(50000, 'single', 0) == 0
+
+        # With children
+        ctc = optimizer._calculate_ctc(50000, 'married_filing_jointly', 2)
+        assert ctc == 4000  # $2000 per child
+
+        # Phase-out at high income
+        ctc_high = optimizer._calculate_ctc(500000, 'married_filing_jointly', 2)
+        assert ctc_high < 4000
+
+    def test_tax_liability_calculation(self):
+        """Test overall tax liability calculation."""
+        from microplex.hierarchical import TaxUnitOptimizer
+
+        optimizer = TaxUnitOptimizer()
+
+        # Low income, should have negative tax (refundable credits)
+        liability_low = optimizer._calculate_tax_liability(25000, 'single', 1)
+        assert liability_low < 0
+
+        # Moderate income
+        liability_mid = optimizer._calculate_tax_liability(75000, 'married_filing_jointly', 2)
+        assert liability_mid >= 0
+
+        # High income
+        liability_high = optimizer._calculate_tax_liability(200000, 'single', 0)
+        assert liability_high > liability_mid

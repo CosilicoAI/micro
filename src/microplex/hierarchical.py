@@ -11,6 +11,7 @@ construct tax units / SPM units algorithmically.
 
 from typing import Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
+from itertools import combinations
 
 import numpy as np
 import pandas as pd
@@ -419,6 +420,463 @@ class HierarchicalSynthesizer:
             })
 
         return pd.DataFrame(spm_units)
+
+
+class TaxUnitOptimizer:
+    """
+    Optimizer for constructing tax units within households.
+
+    Determines optimal filing status and dependent assignments
+    to minimize overall tax liability for the household.
+
+    Uses 2024 tax parameters.
+    """
+
+    # 2024 Standard Deductions
+    STANDARD_DEDUCTIONS = {
+        'single': 14600,
+        'married_filing_jointly': 29200,
+        'married_filing_separately': 14600,
+        'head_of_household': 21900,
+    }
+
+    # 2024 Tax Brackets (single filer)
+    TAX_BRACKETS_SINGLE = [
+        (11600, 0.10),
+        (47150, 0.12),
+        (100525, 0.22),
+        (191950, 0.24),
+        (243725, 0.32),
+        (609350, 0.35),
+        (float('inf'), 0.37),
+    ]
+
+    # 2024 Tax Brackets (married filing jointly)
+    TAX_BRACKETS_MFJ = [
+        (23200, 0.10),
+        (94300, 0.12),
+        (201050, 0.22),
+        (383900, 0.24),
+        (487450, 0.32),
+        (731200, 0.35),
+        (float('inf'), 0.37),
+    ]
+
+    # 2024 Tax Brackets (head of household)
+    TAX_BRACKETS_HOH = [
+        (16550, 0.10),
+        (63100, 0.12),
+        (100500, 0.22),
+        (191950, 0.24),
+        (243700, 0.32),
+        (609350, 0.35),
+        (float('inf'), 0.37),
+    ]
+
+    # 2024 EITC Parameters
+    EITC_PARAMS = {
+        # (max_credit, phase_in_rate, phase_in_end, phase_out_start_single, phase_out_start_mfj, phase_out_rate, phase_out_end_single, phase_out_end_mfj)
+        0: (632, 0.0765, 8260, 9800, 16370, 0.0765, 18591, 25511),
+        1: (4213, 0.34, 12390, 22720, 29640, 0.1598, 49084, 56004),
+        2: (6960, 0.40, 17400, 22720, 29640, 0.2106, 55768, 62688),
+        3: (7830, 0.45, 17400, 22720, 29640, 0.2106, 59899, 66819),
+    }
+
+    # 2024 CTC Parameters
+    CTC_PER_CHILD = 2000
+    CTC_PHASE_OUT_START_SINGLE = 200000
+    CTC_PHASE_OUT_START_MFJ = 400000
+    CTC_PHASE_OUT_RATE = 0.05  # $50 per $1000 over threshold
+
+    def __init__(self):
+        """Initialize the TaxUnitOptimizer."""
+        pass
+
+    def optimize_household(
+        self,
+        hh_id: int,
+        persons_df: pd.DataFrame,
+    ) -> List[Dict]:
+        """
+        Construct optimal tax units for a household.
+
+        Args:
+            hh_id: Household ID
+            persons_df: DataFrame with person data for this household
+
+        Returns:
+            List of tax unit dictionaries
+        """
+        # Filter to this household's persons
+        hh_persons = persons_df[persons_df['household_id'] == hh_id].copy()
+
+        if len(hh_persons) == 0:
+            return []
+
+        # Identify adults vs potential dependents
+        head = hh_persons[hh_persons['relationship_to_head'] == 0]
+        spouse = hh_persons[hh_persons['relationship_to_head'] == 1]
+        children = hh_persons[hh_persons['relationship_to_head'] == 2]
+        others = hh_persons[hh_persons['relationship_to_head'] == 3]
+
+        tax_units = []
+        tu_id = 0
+
+        # Determine qualifying dependents among children
+        qualifying_dependents = self._get_qualifying_dependents(children)
+        n_qualifying_children = len([d for d in qualifying_dependents if d['age'] < 17])
+
+        # Case 1: Married couple
+        if len(head) > 0 and len(spouse) > 0:
+            head_row = head.iloc[0]
+            spouse_row = spouse.iloc[0]
+            combined_income = head_row['income'] + spouse_row['income']
+
+            # Calculate MFJ liability
+            mfj_liability = self._calculate_tax_liability(
+                combined_income,
+                'married_filing_jointly',
+                len(qualifying_dependents)
+            )
+
+            # Calculate MFS liability (each spouse files separately)
+            mfs_head_liability = self._calculate_tax_liability(
+                head_row['income'],
+                'married_filing_separately',
+                0  # No dependents for MFS comparison (simplified)
+            )
+            mfs_spouse_liability = self._calculate_tax_liability(
+                spouse_row['income'],
+                'married_filing_separately',
+                0
+            )
+            mfs_total = mfs_head_liability + mfs_spouse_liability
+
+            # Choose optimal filing status
+            if mfs_total < mfj_liability:
+                # File separately
+                tax_units.append({
+                    'tax_unit_id': tu_id,
+                    'household_id': hh_id,
+                    'filing_status': 'married_filing_separately',
+                    'filer_ids': [int(head_row['person_id'])],
+                    'dependent_ids': [],
+                    'n_dependents': 0,
+                    'total_income': head_row['income'],
+                    'tax_liability': mfs_head_liability,
+                })
+                tu_id += 1
+                tax_units.append({
+                    'tax_unit_id': tu_id,
+                    'household_id': hh_id,
+                    'filing_status': 'married_filing_separately',
+                    'filer_ids': [int(spouse_row['person_id'])],
+                    'dependent_ids': [],
+                    'n_dependents': 0,
+                    'total_income': spouse_row['income'],
+                    'tax_liability': mfs_spouse_liability,
+                })
+                tu_id += 1
+            else:
+                # File jointly
+                tax_units.append({
+                    'tax_unit_id': tu_id,
+                    'household_id': hh_id,
+                    'filing_status': 'married_filing_jointly',
+                    'filer_ids': [int(head_row['person_id']), int(spouse_row['person_id'])],
+                    'dependent_ids': [int(d['person_id']) for d in qualifying_dependents],
+                    'n_dependents': len(qualifying_dependents),
+                    'total_income': combined_income,
+                    'tax_liability': mfj_liability,
+                })
+                tu_id += 1
+
+        # Case 2: Single head with dependents (Head of Household)
+        elif len(head) > 0 and len(qualifying_dependents) > 0:
+            head_row = head.iloc[0]
+            income = head_row['income']
+
+            liability = self._calculate_tax_liability(
+                income,
+                'head_of_household',
+                len(qualifying_dependents)
+            )
+
+            tax_units.append({
+                'tax_unit_id': tu_id,
+                'household_id': hh_id,
+                'filing_status': 'head_of_household',
+                'filer_ids': [int(head_row['person_id'])],
+                'dependent_ids': [int(d['person_id']) for d in qualifying_dependents],
+                'n_dependents': len(qualifying_dependents),
+                'total_income': income,
+                'tax_liability': liability,
+            })
+            tu_id += 1
+
+        # Case 3: Single head without dependents
+        elif len(head) > 0:
+            head_row = head.iloc[0]
+            income = head_row['income']
+
+            liability = self._calculate_tax_liability(income, 'single', 0)
+
+            tax_units.append({
+                'tax_unit_id': tu_id,
+                'household_id': hh_id,
+                'filing_status': 'single',
+                'filer_ids': [int(head_row['person_id'])],
+                'dependent_ids': [],
+                'n_dependents': 0,
+                'total_income': income,
+                'tax_liability': liability,
+            })
+            tu_id += 1
+
+        # Handle unrelated adults - each files separately
+        for _, other_row in others.iterrows():
+            income = other_row['income']
+            liability = self._calculate_tax_liability(income, 'single', 0)
+
+            tax_units.append({
+                'tax_unit_id': tu_id,
+                'household_id': hh_id,
+                'filing_status': 'single',
+                'filer_ids': [int(other_row['person_id'])],
+                'dependent_ids': [],
+                'n_dependents': 0,
+                'total_income': income,
+                'tax_liability': liability,
+            })
+            tu_id += 1
+
+        return tax_units
+
+    def _get_qualifying_dependents(
+        self,
+        children: pd.DataFrame
+    ) -> List[Dict]:
+        """
+        Determine which children qualify as dependents.
+
+        Rules:
+        - Children under 19
+        - Full-time students under 24
+        - Permanently disabled adults
+
+        Args:
+            children: DataFrame of child persons
+
+        Returns:
+            List of qualifying dependent dicts
+        """
+        dependents = []
+
+        for _, child in children.iterrows():
+            age = child['age']
+            is_student = child.get('is_student', False)
+            is_disabled = child.get('is_disabled', False)
+
+            # Qualifying child test
+            if age < 19:
+                dependents.append(child.to_dict())
+            elif age < 24 and is_student:
+                dependents.append(child.to_dict())
+            elif is_disabled:
+                dependents.append(child.to_dict())
+
+        return dependents
+
+    def _standard_deduction(
+        self,
+        filing_status: str,
+        n_dependents: int
+    ) -> float:
+        """
+        Get standard deduction for filing status.
+
+        Args:
+            filing_status: Filing status string
+            n_dependents: Number of dependents (not currently used)
+
+        Returns:
+            Standard deduction amount
+        """
+        return self.STANDARD_DEDUCTIONS.get(filing_status, 14600)
+
+    def _get_tax_brackets(self, filing_status: str) -> List[Tuple[float, float]]:
+        """Get tax brackets for filing status."""
+        if filing_status == 'married_filing_jointly':
+            return self.TAX_BRACKETS_MFJ
+        elif filing_status == 'head_of_household':
+            return self.TAX_BRACKETS_HOH
+        else:
+            # single and married_filing_separately use same brackets
+            return self.TAX_BRACKETS_SINGLE
+
+    def _calculate_bracket_tax(
+        self,
+        taxable_income: float,
+        filing_status: str
+    ) -> float:
+        """
+        Calculate tax from brackets.
+
+        Args:
+            taxable_income: Income after deductions
+            filing_status: Filing status string
+
+        Returns:
+            Tax amount before credits
+        """
+        if taxable_income <= 0:
+            return 0
+
+        brackets = self._get_tax_brackets(filing_status)
+        tax = 0
+        prev_threshold = 0
+
+        for threshold, rate in brackets:
+            if taxable_income <= threshold:
+                tax += (taxable_income - prev_threshold) * rate
+                break
+            else:
+                tax += (threshold - prev_threshold) * rate
+                prev_threshold = threshold
+
+        return tax
+
+    def _calculate_eitc(
+        self,
+        income: float,
+        filing_status: str,
+        n_children: int
+    ) -> float:
+        """
+        Calculate Earned Income Tax Credit.
+
+        Args:
+            income: Earned income
+            filing_status: Filing status string
+            n_children: Number of qualifying children
+
+        Returns:
+            EITC amount
+        """
+        # Cap children at 3 for EITC purposes
+        n_children = min(n_children, 3)
+
+        params = self.EITC_PARAMS[n_children]
+        max_credit, phase_in_rate, phase_in_end, phase_out_start_single, phase_out_start_mfj, phase_out_rate, phase_out_end_single, phase_out_end_mfj = params
+
+        # Select phase-out thresholds based on filing status
+        if filing_status == 'married_filing_jointly':
+            phase_out_start = phase_out_start_mfj
+            phase_out_end = phase_out_end_mfj
+        else:
+            phase_out_start = phase_out_start_single
+            phase_out_end = phase_out_end_single
+
+        # Phase-in: Credit increases as income rises up to phase_in_end
+        if income <= phase_in_end:
+            credit = income * phase_in_rate
+        # Plateau: Maximum credit between phase_in_end and phase_out_start
+        elif income <= phase_out_start:
+            credit = max_credit
+        # Phase-out: Credit decreases as income rises above phase_out_start
+        elif income < phase_out_end:
+            credit = max_credit - (income - phase_out_start) * phase_out_rate
+        else:
+            credit = 0
+
+        # Ensure credit doesn't exceed maximum
+        credit = min(credit, max_credit)
+
+        return max(0, credit)
+
+    def _calculate_ctc(
+        self,
+        income: float,
+        filing_status: str,
+        n_children: int
+    ) -> float:
+        """
+        Calculate Child Tax Credit.
+
+        Args:
+            income: Adjusted gross income
+            filing_status: Filing status string
+            n_children: Number of qualifying children under 17
+
+        Returns:
+            CTC amount
+        """
+        if n_children == 0:
+            return 0
+
+        # Base credit
+        credit = n_children * self.CTC_PER_CHILD
+
+        # Phase-out threshold
+        if filing_status == 'married_filing_jointly':
+            threshold = self.CTC_PHASE_OUT_START_MFJ
+        else:
+            threshold = self.CTC_PHASE_OUT_START_SINGLE
+
+        # Phase-out: $50 reduction per $1000 over threshold
+        if income > threshold:
+            excess = income - threshold
+            # Round up to nearest $1000
+            reduction_units = int((excess + 999) / 1000)
+            reduction = reduction_units * 50
+            credit = max(0, credit - reduction)
+
+        return credit
+
+    def _calculate_tax_liability(
+        self,
+        income: float,
+        filing_status: str,
+        n_dependents: int
+    ) -> float:
+        """
+        Calculate overall tax liability after credits.
+
+        Args:
+            income: Total income
+            filing_status: Filing status string
+            n_dependents: Number of dependents
+
+        Returns:
+            Net tax liability (negative if refund)
+        """
+        # Standard deduction
+        std_ded = self._standard_deduction(filing_status, n_dependents)
+        taxable_income = max(0, income - std_ded)
+
+        # Calculate bracket tax
+        bracket_tax = self._calculate_bracket_tax(taxable_income, filing_status)
+
+        # Count qualifying children for credits (under 17 for CTC)
+        # For simplicity, assume all dependents are qualifying children
+        n_children = n_dependents
+
+        # Calculate credits
+        eitc = self._calculate_eitc(income, filing_status, n_children)
+        ctc = self._calculate_ctc(income, filing_status, n_children)
+
+        # EITC is fully refundable, CTC partially refundable (up to $1700 per child in 2024)
+        # For simplicity, treat CTC as refundable up to $1700 per child
+        refundable_ctc = min(ctc, n_children * 1700)
+        non_refundable_ctc = ctc - refundable_ctc
+
+        # Apply non-refundable credits (can't go below zero)
+        tax_after_non_refundable = max(0, bracket_tax - non_refundable_ctc)
+
+        # Apply refundable credits
+        net_tax = tax_after_non_refundable - eitc - refundable_ctc
+
+        return net_tax
 
 
 def prepare_cps_for_hierarchical(

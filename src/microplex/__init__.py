@@ -38,6 +38,12 @@ from microplex.discrete import (
     CategoricalModel,
     DiscreteModelCollection,
 )
+from microplex.data import (
+    load_cps_asec,
+    load_cps_for_synthesis,
+    create_sample_data,
+    get_data_info,
+)
 
 __version__ = "0.1.0"
 
@@ -49,6 +55,11 @@ __all__ = [
     "HierarchicalSynthesizer",
     "HouseholdSchema",
     "prepare_cps_for_hierarchical",
+    # Data loading
+    "load_cps_asec",
+    "load_cps_for_synthesis",
+    "create_sample_data",
+    "get_data_info",
     # Transforms
     "ZeroInflatedTransform",
     "LogTransform",
