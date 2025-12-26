@@ -176,9 +176,10 @@ class Synthesizer:
             weights = torch.ones(len(data), dtype=torch.float32)
 
         # Create normalizing flow
+        # Use _actual_n_context which accounts for dummy context when condition_vars is empty
         self.flow_model_ = ConditionalMAF(
             n_features=n_targets,
-            n_context=n_context,
+            n_context=self._actual_n_context,
             n_layers=self.n_layers,
             hidden_dim=self.hidden_dim,
         )
@@ -278,7 +279,7 @@ class Synthesizer:
 
         for var in self.target_vars:
             model = BinaryModel(
-                n_context=len(self.condition_vars),
+                n_context=self._actual_n_context,
                 hidden_dim=self.hidden_dim // 2,
             )
 
@@ -317,7 +318,7 @@ class Synthesizer:
                 categorical_vars[var] = unique_vals
 
         self.discrete_model_ = DiscreteModelCollection(
-            n_context=len(self.condition_vars),
+            n_context=self._actual_n_context,
             binary_vars=binary_vars,
             categorical_vars=categorical_vars,
             hidden_dim=self.hidden_dim // 2,
