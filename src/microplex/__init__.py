@@ -20,6 +20,7 @@ Example:
 
 from microplex.synthesizer import Synthesizer
 from microplex.reweighting import Reweighter
+from microplex.calibration import Calibrator
 from microplex.hierarchical import (
     HierarchicalSynthesizer,
     HouseholdSchema,
@@ -44,6 +45,11 @@ from microplex.data import (
     create_sample_data,
     get_data_info,
 )
+from microplex.cps_synthetic import (
+    CPSSummaryStats,
+    CPSSyntheticGenerator,
+    validate_synthetic,
+)
 
 __version__ = "0.1.0"
 
@@ -51,10 +57,15 @@ __all__ = [
     # Main classes
     "Synthesizer",
     "Reweighter",
+    "Calibrator",
     # Hierarchical
     "HierarchicalSynthesizer",
     "HouseholdSchema",
     "prepare_cps_for_hierarchical",
+    # CPS Synthetic
+    "CPSSummaryStats",
+    "CPSSyntheticGenerator",
+    "validate_synthetic",
     # Data loading
     "load_cps_asec",
     "load_cps_for_synthesis",
