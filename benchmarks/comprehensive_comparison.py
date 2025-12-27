@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 warnings.filterwarnings("ignore")
 
 from run_cps_benchmark import generate_cps_like_data
-from compare_qrf import SequentialQRFWithZeroInflation
+from compare_qrf import SequentialQRF, SequentialQRFWithZeroInflation
 from multivariate_metrics import (
     compute_mmd, compute_energy_distance, normalize_data,
     compute_authenticity_distance, compute_coverage_distance
@@ -88,8 +88,26 @@ try:
 except Exception as e:
     print(f"  ✗ Failed: {e}")
 
-# 3. TabPFN-based
-print("\n[3/7] TabPFN-based synthesis...")
+# 3. Sequential QRF (PolicyEngine approach - no zero-inflation)
+print("\n[3/8] Sequential QRF (PolicyEngine, no ZI)...")
+try:
+    start = time.time()
+    model = SequentialQRF(
+        target_vars, condition_vars,
+        n_estimators=200, max_depth=15
+    )
+    model.fit(train_data, verbose=False)
+    synthetic = model.generate(test_conditions)
+    train_time = time.time() - start
+    res = evaluate(synthetic, "QRF (no ZI)")
+    res["time"] = train_time
+    results.append(res)
+    print(f"  ✓ MMD={res['mmd']:.4f}, Energy={res['energy_dist']:.4f}, Coverage={res['coverage']:.4f}")
+except Exception as e:
+    print(f"  ✗ Failed: {e}")
+
+# 4. TabPFN-based
+print("\n[4/8] TabPFN-based synthesis...")
 try:
     from tabpfn import TabPFNRegressor
 
