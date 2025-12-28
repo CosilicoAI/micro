@@ -50,6 +50,7 @@ from microplex.cps_synthetic import (
     CPSSyntheticGenerator,
     validate_synthetic,
 )
+from microplex.transitions import Mortality
 
 __version__ = "0.1.0"
 
@@ -85,4 +86,6 @@ __all__ = [
     "BinaryModel",
     "CategoricalModel",
     "DiscreteModelCollection",
+    # Transitions
+    "Mortality",
 ]
