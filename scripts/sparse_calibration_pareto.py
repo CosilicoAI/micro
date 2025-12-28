@@ -8,6 +8,47 @@ import matplotlib.pyplot as plt
 from microplex.calibration import SparseCalibrator, HardConcreteCalibrator
 
 
+def compute_data_loss(weights: np.ndarray, data: pd.DataFrame,
+                      marginal_targets: dict, continuous_targets: dict,
+                      loss_type: str = "relative") -> float:
+    """
+    Compute data loss (without L0 penalty) using same formula as HardConcrete.
+
+    Args:
+        weights: Calibration weights
+        data: Population dataframe
+        marginal_targets: {var: {category: target_count}}
+        continuous_targets: {var: target_sum}
+        loss_type: "relative" for (y-y_pred)²/(y+1)² or "mse"
+
+    Returns:
+        Sum of squared errors (relative or absolute)
+    """
+    errors = []
+
+    # Marginal targets
+    for var, var_targets in marginal_targets.items():
+        for category, target in var_targets.items():
+            mask = data[var] == category
+            actual = weights[mask].sum()
+            if loss_type == "relative":
+                err = (actual - target) / (target + 1)
+            else:
+                err = actual - target
+            errors.append(err ** 2)
+
+    # Continuous targets
+    for var, target in continuous_targets.items():
+        actual = (weights * data[var].values).sum()
+        if loss_type == "relative":
+            err = (actual - target) / (target + 1)
+        else:
+            err = actual - target
+        errors.append(err ** 2)
+
+    return sum(errors)
+
+
 def generate_synthetic_population(n_records: int = 10000, seed: int = 42) -> pd.DataFrame:
     """Generate synthetic population with known structure."""
     np.random.seed(seed)
@@ -91,13 +132,15 @@ def run_comparison(n_records: int = 5000, include_joint: bool = False, n_continu
         try:
             cal = SparseCalibrator(target_sparsity=target_sparsity)
             result = cal.fit_transform(pop.copy(), marginal_targets, continuous_targets)
-            val = cal.validate(result)
+            # Compute same loss as HardConcrete (without L0 penalty)
+            data_loss = compute_data_loss(
+                cal.weights_, result, marginal_targets, continuous_targets, loss_type="relative"
+            )
             cc_results.append({
                 "sparsity": cal.get_sparsity(),
-                "mean_error": val["mean_error"],
-                "max_error": val["max_error"],
+                "data_loss": data_loss,
             })
-            print(f"  target={target_sparsity:.0%} → actual={cal.get_sparsity():.1%}, error={val['mean_error']:.2%}")
+            print(f"  target={target_sparsity:.0%} → actual={cal.get_sparsity():.1%}, loss={data_loss:.6f}")
         except Exception as e:
             print(f"  target={target_sparsity:.0%} failed: {e}")
 
@@ -115,14 +158,16 @@ def run_comparison(n_records: int = 5000, include_joint: bool = False, n_continu
                 verbose=False,
             )
             result = cal.fit_transform(pop.copy(), marginal_targets, continuous_targets)
-            val = cal.validate(result)
+            # Compute same loss function for fair comparison
+            data_loss = compute_data_loss(
+                cal.weights_, result, marginal_targets, continuous_targets, loss_type="relative"
+            )
             hc_results.append({
                 "lambda": lam,
                 "sparsity": cal.get_sparsity(),
-                "mean_error": val["mean_error"],
-                "max_error": val["max_error"],
+                "data_loss": data_loss,
             })
-            print(f"  λ={lam:.0e} → sparsity={cal.get_sparsity():.1%}, error={val['mean_error']:.2%}")
+            print(f"  λ={lam:.0e} → sparsity={cal.get_sparsity():.1%}, loss={data_loss:.6f}")
         except Exception as e:
             print(f"  λ={lam:.0e} failed: {e}")
 
@@ -130,7 +175,7 @@ def run_comparison(n_records: int = 5000, include_joint: bool = False, n_continu
 
 
 def plot_pareto(cc_df: pd.DataFrame, hc_df: pd.DataFrame, output_path: str = "sparse_calibration_pareto.png"):
-    """Plot Pareto frontier for both methods."""
+    """Plot Pareto frontier for both methods using same loss function."""
     fig, ax = plt.subplots(figsize=(10, 6))
 
     # Sort by sparsity for line plots
@@ -140,7 +185,7 @@ def plot_pareto(cc_df: pd.DataFrame, hc_df: pd.DataFrame, output_path: str = "sp
     # Plot Cross-Category
     ax.plot(
         cc_df["sparsity"] * 100,
-        cc_df["mean_error"] * 100,
+        cc_df["data_loss"],
         "o-",
         color="#2ecc71",
         linewidth=2,
@@ -151,7 +196,7 @@ def plot_pareto(cc_df: pd.DataFrame, hc_df: pd.DataFrame, output_path: str = "sp
     # Plot Hard Concrete
     ax.plot(
         hc_df["sparsity"] * 100,
-        hc_df["mean_error"] * 100,
+        hc_df["data_loss"],
         "s-",
         color="#3498db",
         linewidth=2,
@@ -160,12 +205,12 @@ def plot_pareto(cc_df: pd.DataFrame, hc_df: pd.DataFrame, output_path: str = "sp
     )
 
     ax.set_xlabel("Sparsity (%)", fontsize=12)
-    ax.set_ylabel("Mean Relative Error (%)", fontsize=12)
-    ax.set_title("Sparse Calibration: Sparsity vs Accuracy Tradeoff", fontsize=14)
+    ax.set_ylabel("Data Loss (sum of squared relative errors)", fontsize=12)
+    ax.set_title("Sparse Calibration: Sparsity vs Loss Tradeoff", fontsize=14)
     ax.legend(fontsize=11)
     ax.grid(True, alpha=0.3)
     ax.set_xlim(20, 100)
-    ax.set_ylim(bottom=0)
+    ax.set_yscale("log")  # Log scale since losses vary widely
 
     # Add annotation
     ax.annotate(
