@@ -1,0 +1,71 @@
+{
+  "yale_budget_lab": {
+    "source": "Yale Budget Lab",
+    "url": "https://budgetlab.yale.edu/",
+    "year": 2024,
+    "targets": {
+      "bottom_20_income_share": 0.032,
+      "top_1_income_share": 0.205,
+      "gini_coefficient": 0.49,
+      "effective_tax_rate_bottom_20": 0.02,
+      "effective_tax_rate_top_1": 0.24
+    }
+  },
+  "psl_taxdata": {
+    "source": "PSL Tax-Data",
+    "url": "https://github.com/PSLmodels/taxdata",
+    "year": 2024,
+    "targets": {
+      "wage_growth_factor": 1.045,
+      "interest_growth_factor": 1.02,
+      "dividend_growth_factor": 1.03,
+      "cg_growth_factor": 1.05,
+      "total_tax_units": 175000000
+    }
+  },
+  "tax_foundation": {
+    "source": "Tax Foundation",
+    "url": "https://taxfoundation.org/data/",
+    "year": 2023,
+    "targets": {
+      "total_federal_revenue": 4439000000000,
+      "individual_income_tax_revenue": 2176000000000,
+      "payroll_tax_revenue": 1614000000000,
+      "corporate_income_tax_revenue": 420000000000,
+      "top_marginal_rate": 0.37,
+      "corporate_rate": 0.21,
+      "returns_with_no_liability": 60600000,
+      "returns_with_eitc": 31000000,
+      "average_eitc_amount": 2541
+    }
+  },
+  "cbpp": {
+    "source": "CBPP",
+    "url": "https://www.cbpp.org/",
+    "year": 2023,
+    "targets": {
+      "snap_participants": 42000000,
+      "snap_households": 21600000,
+      "average_snap_benefit": 234,
+      "ssi_recipients": 7400000,
+      "average_ssi_payment": 674,
+      "tanf_recipients": 2000000,
+      "tanf_families": 700000,
+      "housing_assistance_households": 5200000
+    }
+  },
+  "cbo": {
+    "source": "CBO",
+    "url": "https://www.cbo.gov/",
+    "year": 2024,
+    "targets": {
+      "gdp_nominal": 28300000000000,
+      "labor_force": 166000000,
+      "unemployment_rate": 0.039,
+      "federal_outlays": 6900000000000,
+      "social_security_outlays": 1500000000000,
+      "medicare_outlays": 1000000000000,
+      "medicaid_outlays": 600000000000
+    }
+  }
+}
