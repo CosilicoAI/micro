@@ -50,7 +50,19 @@ from microplex.cps_synthetic import (
     CPSSyntheticGenerator,
     validate_synthetic,
 )
-from microplex.transitions import Mortality
+from microplex.transitions import (
+    Mortality,
+    DisabilityOnset,
+    DisabilityRecovery,
+    DisabilityTransitionModel,
+    MarriageTransition,
+    DivorceTransition,
+)
+from microplex.statmatch_backend import (
+    StatMatchSynthesizer,
+    create_synthesizer,
+    HAS_STATMATCH,
+)
 
 __version__ = "0.1.0"
 
@@ -59,6 +71,10 @@ __all__ = [
     "Synthesizer",
     "Reweighter",
     "Calibrator",
+    # Statistical matching (optional backend)
+    "StatMatchSynthesizer",
+    "create_synthesizer",
+    "HAS_STATMATCH",
     # Hierarchical
     "HierarchicalSynthesizer",
     "HouseholdSchema",
@@ -88,4 +104,9 @@ __all__ = [
     "DiscreteModelCollection",
     # Transitions
     "Mortality",
+    "DisabilityOnset",
+    "DisabilityRecovery",
+    "DisabilityTransitionModel",
+    "MarriageTransition",
+    "DivorceTransition",
 ]
