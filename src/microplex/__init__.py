@@ -20,7 +20,16 @@ Example:
 
 from microplex.synthesizer import Synthesizer
 from microplex.reweighting import Reweighter
-from microplex.calibration import Calibrator
+from microplex.calibration import (
+    Calibrator,
+    SparseCalibrator,
+    HardConcreteCalibrator,
+)
+
+# Default sparse calibrator: Cross-Category + IPF achieves exact target matching
+# with controllable sparsity. HardConcreteCalibrator available for differentiable
+# pipelines or custom loss functions.
+DefaultSparseCalibrator = SparseCalibrator
 from microplex.hierarchical import (
     HierarchicalSynthesizer,
     HouseholdSchema,
@@ -71,6 +80,9 @@ __all__ = [
     "Synthesizer",
     "Reweighter",
     "Calibrator",
+    "SparseCalibrator",
+    "HardConcreteCalibrator",
+    "DefaultSparseCalibrator",
     # Statistical matching (optional backend)
     "StatMatchSynthesizer",
     "create_synthesizer",
