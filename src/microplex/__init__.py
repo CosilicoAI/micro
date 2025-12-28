@@ -72,6 +72,14 @@ from microplex.statmatch_backend import (
     create_synthesizer,
     HAS_STATMATCH,
 )
+from microplex.district import (
+    DistrictMicroplex,
+    build_targets_from_database,
+    synthesize_district_records,
+    build_district_microplex,
+    load_seed_data,
+    STATE_FIPS,
+)
 
 __version__ = "0.1.0"
 
@@ -121,4 +129,11 @@ __all__ = [
     "DisabilityTransitionModel",
     "MarriageTransition",
     "DivorceTransition",
+    # District microplex
+    "DistrictMicroplex",
+    "build_targets_from_database",
+    "synthesize_district_records",
+    "build_district_microplex",
+    "load_seed_data",
+    "STATE_FIPS",
 ]
