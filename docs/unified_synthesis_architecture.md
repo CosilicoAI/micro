@@ -119,14 +119,22 @@ For Social Security, we need lifetime trajectories:
 
 ### Earnings Trajectories
 
-Current approach (PSID-based QRF):
-- Condition on: initial age, education, gender, initial earnings
-- Predict: earnings at each age
+**Key architectural decision**: Generate full trajectory ALL AT ONCE (not sequentially).
 
-Unified approach:
-- Latent `z` encodes "earnings type" (trajectory shape)
-- Different types: steady growth, peak-then-decline, volatile, etc.
-- Learn from PSID but generate many more variants
+Why all-at-once vs sequential:
+- Sequential (AR): P(earnings_t | earnings_{t-1}, ...) compounds errors over time
+- All-at-once: P(earnings_18:70 | demographics) preserves full correlations
+
+The model learns latent "trajectory types" that capture lifecycle shapes:
+- **Type A**: Steady growth (professional career)
+- **Type B**: Peak-then-decline (manual labor, physical jobs)
+- **Type C**: Volatile (self-employment, gig economy)
+- **Type D**: Interrupted (disability, caregiving, unemployment spells)
+
+Implementation:
+- Use microplex's ConditionalMAF with 35-50 output dimensions (one per year)
+- Condition on: education, gender, birth cohort, initial earnings
+- Training data: PSID (50+ year histories, ideal) or SIPP (4-year panels, public)
 
 ### Demographic Transitions
 
@@ -135,6 +143,16 @@ Event times as functions of latent + current state:
 - `P(divorce | z, marriage_duration)`
 - `P(disability_onset | z, age, occupation)`
 - `P(death_age | z, health_trajectory)`
+
+### Hierarchical + Temporal Synthesis
+
+The full synthesis pipeline is:
+1. **Households** (HierarchicalSynthesizer): size, geography, housing costs
+2. **Persons within households** (HierarchicalSynthesizer): demographics, initial income
+3. **Trajectories for each person** (TrajectoryModel): 35-year earnings histories
+
+This produces a complete longitudinal synthetic population suitable for
+Social Security and lifetime tax modeling.
 
 ## Advantages Over Current Approach
 
