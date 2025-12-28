@@ -8,16 +8,16 @@
 |----------|---------|--------|-----|
 | IRS AGI brackets (national) | 16 | 16 | ✅ |
 | IRS AGI × filing status | 24 | 64 | 40 |
-| IRS AGI × state | 0 | 800+ | 800+ |
+| IRS AGI × state | 357 | 800+ | ~450 |
 | EITC by children | 0 | 4 | 4 |
 | CTC/ACTC | 0 | 2 | 2 |
-| State population | 10 | 51 | 41 |
-| Congressional districts | 0 | 436 | 436 |
-| Age distribution | 0 | 18 groups × 51 | 918 |
+| State population | 51 | 51 | ✅ |
+| Congressional districts | 440 | 436 | ✅ |
+| Age × state | 918 | 918 | ✅ |
 | Medicaid enrollment | 0 | 51 | 51 |
 | SNAP by state | 10 | 51 | 41 |
 | SSI | 3 | ~50 | ~47 |
-| **Total** | **~74** | **~2,800** | **~2,726** |
+| **Total** | **1,762** | **~2,800** | **~1,038** |
 
 ## Phase 1: Core Tax Targets (Priority: High)
 
@@ -178,9 +178,27 @@ Total: ~1,937 targets (70% of PE)
 | `eitc_amount` | `eitc_received` | Have it |
 | `ctc_amount` | `ctc_received` | Have it |
 
+## Sparse Calibration Results
+
+With constraint-aware sampling (K samples per constraint):
+
+| K | Samples | Mean Error | Weight Range |
+|---|---------|------------|--------------|
+| 50 | 44,595 | 0.64% | 1,060x |
+| 20 | 19,992 | 0.64% | 320x |
+| 10 | 10,294 | 0.64% | 259x |
+| **5** | **5,235** | **0.64%** | 266x |
+| 3 | 3,177 | 1.22% | explodes |
+
+**Key finding**: ~4 samples per constraint is the minimum for stable calibration.
+With 1,354 constraints (districts + state×age), we need ~5k households.
+
+Output: `data/microplex_5k.parquet` (112 KB, 10 columns)
+
 ## Notes
 
 1. **Synthesis helps feasibility**: With 100M+ synthetic households, calibration has more degrees of freedom
 2. **Expect ~5-10% residual error**: Different sources, different years, sampling variance
 3. **GD for conflicting targets**: When infeasible, GD finds better compromise than IPF
 4. **Prioritize tax targets**: These are most important for policy simulation accuracy
+5. **Constraint-aware sampling**: Keep K samples per constraint for O(K×constraints) compression
