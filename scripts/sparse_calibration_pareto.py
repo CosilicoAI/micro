@@ -33,8 +33,14 @@ def generate_synthetic_population(n_records: int = 10000, seed: int = 42) -> pd.
     return data
 
 
-def compute_targets(data: pd.DataFrame) -> tuple:
-    """Compute calibration targets from data."""
+def compute_targets(data: pd.DataFrame, include_joint: bool = False, n_continuous: int = 1) -> tuple:
+    """Compute calibration targets from data.
+
+    Args:
+        data: Population dataframe
+        include_joint: If True, include state × age cross-tabulated targets
+        n_continuous: Number of continuous targets (1=income, 3=income+wages+benefits)
+    """
     marginal_targets = {}
 
     for var in ["state", "age_group", "income_bracket"]:
@@ -42,16 +48,39 @@ def compute_targets(data: pd.DataFrame) -> tuple:
         for val in data[var].unique():
             marginal_targets[var][val] = float((data[var] == val).sum())
 
+    # Add joint state × age targets
+    if include_joint:
+        # Create derived column for joint distribution
+        data["state_age"] = data["state"] + "_" + data["age_group"]
+        marginal_targets["state_age"] = {}
+        for val in data["state_age"].unique():
+            count = (data["state_age"] == val).sum()
+            marginal_targets["state_age"][val] = float(count)
+
+    # Continuous targets
     continuous_targets = {"income": float(data["income"].sum())}
+
+    if n_continuous >= 2:
+        # Simulate wages as portion of income
+        data["wages"] = data["income"] * np.random.uniform(0.5, 0.9, len(data))
+        continuous_targets["wages"] = float(data["wages"].sum())
+
+    if n_continuous >= 3:
+        # Simulate benefits
+        data["benefits"] = np.random.lognormal(8, 1.5, len(data))
+        continuous_targets["benefits"] = float(data["benefits"].sum())
 
     return marginal_targets, continuous_targets
 
 
-def run_comparison(n_records: int = 5000):
+def run_comparison(n_records: int = 5000, include_joint: bool = False, n_continuous: int = 1):
     """Run both methods across sparsity range and collect results."""
     print(f"Generating {n_records} synthetic records...")
     pop = generate_synthetic_population(n_records=n_records)
-    marginal_targets, continuous_targets = compute_targets(pop)
+    marginal_targets, continuous_targets = compute_targets(pop, include_joint=include_joint, n_continuous=n_continuous)
+
+    n_cat_targets = sum(len(v) for v in marginal_targets.values())
+    print(f"Targets: {n_cat_targets} categorical, {len(continuous_targets)} continuous")
 
     # Cross-category results
     cc_results = []
@@ -156,13 +185,43 @@ def plot_pareto(cc_df: pd.DataFrame, hc_df: pd.DataFrame, output_path: str = "sp
     return fig
 
 
+def run_scenarios():
+    """Run comparison across different target complexities."""
+    scenarios = [
+        {"name": "simple", "include_joint": False, "n_continuous": 1},
+        {"name": "joint", "include_joint": True, "n_continuous": 1},
+        {"name": "multi_continuous", "include_joint": False, "n_continuous": 3},
+        {"name": "complex", "include_joint": True, "n_continuous": 3},
+    ]
+
+    all_results = {}
+    for scenario in scenarios:
+        print(f"\n{'='*60}")
+        print(f"Scenario: {scenario['name']}")
+        print(f"{'='*60}")
+        cc_df, hc_df = run_comparison(
+            n_records=5000,
+            include_joint=scenario["include_joint"],
+            n_continuous=scenario["n_continuous"],
+        )
+        all_results[scenario["name"]] = {"cc": cc_df, "hc": hc_df}
+        plot_pareto(cc_df, hc_df, f"sparse_calibration_pareto_{scenario['name']}.png")
+
+    return all_results
+
+
 if __name__ == "__main__":
-    cc_df, hc_df = run_comparison(n_records=5000)
+    import sys
 
-    print("\n" + "=" * 60)
-    print("Cross-Category Results:")
-    print(cc_df.to_string(index=False))
-    print("\nHard Concrete Results:")
-    print(hc_df.to_string(index=False))
+    if len(sys.argv) > 1 and sys.argv[1] == "--all":
+        run_scenarios()
+    else:
+        cc_df, hc_df = run_comparison(n_records=5000)
 
-    plot_pareto(cc_df, hc_df)
+        print("\n" + "=" * 60)
+        print("Cross-Category Results:")
+        print(cc_df.to_string(index=False))
+        print("\nHard Concrete Results:")
+        print(hc_df.to_string(index=False))
+
+        plot_pareto(cc_df, hc_df)
