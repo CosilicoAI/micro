@@ -115,7 +115,33 @@ Each survey observes projections at different levels of this hierarchy.
 
 ## Panel/Longitudinal Component
 
-For Social Security, we need lifetime trajectories:
+For Social Security, we need lifetime trajectories. Our target is parity with DYNASIM.
+
+### DYNASIM Comparison
+
+**DYNASIM** (Urban Institute) is the gold standard for Social Security microsimulation:
+- Uses SIPP as base population (restricted versions)
+- Year-by-year simulation with transition probabilities
+- Statistical matching to administrative earnings
+- 50+ year projection horizon
+
+**Our approach (microplex)** differs in key ways:
+
+| Aspect | DYNASIM | Microplex |
+|--------|---------|-----------|
+| Base data | SIPP (restricted) | CPS + PSID (public) |
+| Generation | Sequential year-by-year | All-at-once |
+| Transitions | Hazard models | Learned from joint distribution |
+| Earnings | Parametric projection | Conditional flow |
+| Uncertainty | Single run | Multiple draws |
+
+**Parity requirements:**
+1. ✅ Earnings trajectories (18-70) - TrajectoryModel
+2. 🔲 Marriage/divorce transitions - Need hazard models
+3. 🔲 Fertility simulation - Need birth hazards
+4. 🔲 Disability onset - Need disability hazards
+5. 🔲 Mortality - Use SSA life tables
+6. 🔲 Forward projection beyond training data
 
 ### Earnings Trajectories
 
