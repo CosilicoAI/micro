@@ -7,7 +7,7 @@
 | Category | Current | PE Has | Gap |
 |----------|---------|--------|-----|
 | IRS AGI brackets (national) | 16 | 16 | ✅ |
-| IRS AGI × filing status | 0 | 64 | 64 |
+| IRS AGI × filing status | 24 | 64 | 40 |
 | IRS AGI × state | 0 | 800+ | 800+ |
 | EITC by children | 0 | 4 | 4 |
 | CTC/ACTC | 0 | 2 | 2 |
@@ -17,7 +17,7 @@
 | Medicaid enrollment | 0 | 51 | 51 |
 | SNAP by state | 10 | 51 | 41 |
 | SSI | 3 | ~50 | ~47 |
-| **Total** | **~50** | **~2,800** | **~2,750** |
+| **Total** | **~74** | **~2,800** | **~2,726** |
 
 ## Phase 1: Core Tax Targets (Priority: High)
 
@@ -171,7 +171,7 @@ Total: ~1,937 targets (70% of PE)
 
 | Target Variable | CPS Variable | Status |
 |-----------------|--------------|--------|
-| `filing_status` | Derive from `marital_status` | Need mapping |
+| `filing_status` | Derive from `marital_status` + household composition | ✅ Implemented |
 | `n_qualifying_children` | Derive from family relationships | Need logic |
 | `congressional_district` | Not in CPS | Need ACS or imputation |
 | `medicaid_enrolled` | `public_assistance_income > 0` | Proxy only |
