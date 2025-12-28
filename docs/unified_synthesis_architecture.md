@@ -144,6 +144,90 @@ Event times as functions of latent + current state:
 4. **Panel coherence**: Single z governs full trajectory
 5. **Extensibility**: Add new surveys by adding observation models
 
+## Experimental Findings
+
+### The Coverage Problem
+
+For 1:1 population synthesis (generating 330M records from surveys totaling ~4M), the key metric is **coverage**: how well the synthetic population fills the attribute space.
+
+```
+Coverage = average distance from each holdout person to nearest synthetic record
+```
+
+Lower is better. Unlike MMD (distribution matching), coverage measures whether we can generate the full diversity of the population.
+
+### Curse of Dimensionality
+
+With 50 dimensions (typical for tax/benefit modeling), we discovered:
+
+| Sample Ratio | Coverage Distance |
+|--------------|-------------------|
+| 1:1          | 2.35              |
+| 5:1          | 0.05              |
+| 10:1         | 0.00              |
+
+This explains why PolicyEngine's ~300k weighted records cannot adequately cover a 330M population in 50D space. We need either:
+1. **More samples** (1:1 synthesis at full scale)
+2. **Better generalization** (flow-based models that extrapolate)
+
+### Method Comparison on Coverage
+
+Testing at realistic sparse coverage (1% training data):
+
+| Method           | Coverage | vs Oracle |
+|------------------|----------|-----------|
+| Oracle           | 0.17     | 1.0x      |
+| **Microplex**    | **0.42** | **2.4x**  |
+| Resample         | 0.48     | 2.8x      |
+| NND.hotdeck      | 0.50     | 2.9x      |
+| CT-GAN           | 0.57     | 3.3x      |
+| QRF+ZI           | 0.62     | 3.6x      |
+| TVAE             | 1.68     | 9.6x      |
+| Gaussian Copula  | 4.07     | 23.3x     |
+
+**Key findings:**
+1. **Microplex wins on coverage** - Flow-based models extrapolate better
+2. **QRF is WORSE than resampling** - Quantile regression regresses toward the mean, producing more concentrated outputs than training data
+3. **MMD tells opposite story** - CT-GAN wins on MMD but loses on coverage. For 1:1 synthesis, coverage matters more.
+
+### Multi-Survey Fusion Challenge
+
+Tested naive approach: stack all surveys, fill NaN with 0, train single model.
+
+| Approach              | Coverage |
+|-----------------------|----------|
+| Single survey         | 0.58     |
+| Multi-survey (NaN→0)  | 0.82     |
+
+**Naive stacking is WORSE.** NaN→0 corrupts the joint distribution. Proper approaches:
+1. Masked loss (only compute loss on observed values)
+2. Sequential fusion (current PE approach) - preserves structure better
+3. Imputation during training with uncertainty
+
+### Real CPS Validation
+
+Tested on actual CPS 2024 data (142,125 records, 40 columns) at 1% training:
+
+| Method    | Coverage |
+|-----------|----------|
+| Microplex | 0.54     |
+| Resample  | 0.59     |
+
+**~8% improvement** on real data confirms simulation findings.
+
+## Product: The Microplex
+
+The output of this synthesis process is called **"the Microplex"** - a 1:1 synthetic population:
+
+- **Initial target**: 330M US persons with full tax/benefit attributes
+- **Future scope**: Everyone on Earth (~8B records)
+- **Uncertainty**: Multiple draws for uncertainty quantification
+
+Unlike weighted microdata (300k records × weights = 330M), the Microplex is:
+- **Explicit**: Every person is a concrete record
+- **Diverse**: Covers the full attribute space
+- **Scalable**: Can generate arbitrary N
+
 ## Open Questions
 
 1. **Dimensionality of z**: How big does latent need to be for 100+ variables?
@@ -151,6 +235,7 @@ Event times as functions of latent + current state:
 3. **Computation**: Training on 330M records?
 4. **Validation**: How do we know synthetic trajectories are realistic?
 5. **Entity crosswalks**: Is hierarchical latent tractable?
+6. **Multi-survey training**: How to handle missing data properly (masked loss, impute during training)?
 
 ## Next Steps
 
