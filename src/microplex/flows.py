@@ -284,14 +284,24 @@ class ConditionalMAF(nn.Module):
         )
 
     def log_prob(
-        self, x: torch.Tensor, context: torch.Tensor
+        self,
+        x: torch.Tensor,
+        context: torch.Tensor,
+        mask: torch.Tensor = None,
+        dim_weights: torch.Tensor = None,
     ) -> torch.Tensor:
         """
-        Compute log probability of x given context.
+        Compute log probability of x given context, with optional masking.
+
+        When mask is provided, only computes loss on observed (mask=1) dimensions.
+        This enables training on multi-survey data with missing values.
 
         Args:
             x: Data [batch, n_features]
             context: Context [batch, n_context]
+            mask: Optional observation mask [batch, n_features], 1=observed, 0=missing
+            dim_weights: Optional per-dimension weights [n_features] for balancing
+                         sparse observations (inverse frequency weighting)
 
         Returns:
             Log probability [batch]
@@ -299,22 +309,61 @@ class ConditionalMAF(nn.Module):
         z = x
         total_log_det = 0.0
 
+        # Track per-dimension log_det contributions
+        per_dim_log_det = torch.zeros_like(x)
+
         for i, layer in enumerate(self.layers):
             # Apply permutation
             perm = getattr(self, f"perm_{i}")
             z = z[:, perm]
+            if mask is not None:
+                # Track which original dimensions are where after permutation
+                perm_mask = mask[:, perm]
 
-            # Apply affine coupling
-            z, log_det = layer(z, context)
-            total_log_det = total_log_det + log_det
+            # Apply affine coupling - get per-dimension log_det
+            mu, log_scale = layer.made(z, context)
+            z_new = (z - mu) * torch.exp(-log_scale)
 
-        # Log prob under base distribution
-        base_log_prob = -0.5 * (
-            self.n_features * np.log(2 * np.pi) +
-            (z ** 2).sum(dim=-1)
-        )
+            # Accumulate per-dimension log_det (before permutation reversal)
+            inv_perm = torch.argsort(perm)
+            per_dim_log_det = per_dim_log_det + (-log_scale)[:, inv_perm]
 
-        return base_log_prob + total_log_det
+            z = z_new
+
+        # Per-dimension base log prob: -0.5 * (log(2*pi) + z^2)
+        per_dim_base = -0.5 * (np.log(2 * np.pi) + z ** 2)
+
+        # If mask provided, only sum over observed dimensions
+        if mask is not None:
+            # Mask is in original dimension order, z is in final permuted order
+            # Need to apply final permutation to mask
+            final_perm = getattr(self, f"perm_{len(self.layers)-1}")
+            z_mask = mask[:, final_perm]
+
+            # Apply dimension weights if provided (for balancing sparse observations)
+            if dim_weights is not None:
+                weighted_mask = mask * dim_weights.unsqueeze(0)
+                weighted_z_mask = z_mask * dim_weights[final_perm].unsqueeze(0)
+            else:
+                weighted_mask = mask
+                weighted_z_mask = z_mask
+
+            # Masked base log prob (weighted)
+            base_log_prob = (per_dim_base * weighted_z_mask).sum(dim=-1)
+
+            # Masked log det - sum only observed dimensions (weighted)
+            log_det = (per_dim_log_det * weighted_mask).sum(dim=-1)
+
+            return base_log_prob + log_det
+        else:
+            # Standard: sum over all dimensions (with optional weights)
+            if dim_weights is not None:
+                base_log_prob = (per_dim_base * dim_weights.unsqueeze(0)).sum(dim=-1)
+                log_det = (per_dim_log_det * dim_weights.unsqueeze(0)).sum(dim=-1)
+            else:
+                base_log_prob = per_dim_base.sum(dim=-1)
+                log_det = per_dim_log_det.sum(dim=-1)
+            return base_log_prob + log_det
 
     def sample(
         self,

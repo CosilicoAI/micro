@@ -185,19 +185,58 @@ class Synthesizer:
             self._actual_n_context = 1
         context = torch.tensor(context_np, dtype=torch.float32)
 
-        # Target tensor (replace NaN with 0 for training)
+        # Target tensor and observation mask
+        # NaN values in ORIGINAL data indicate missing observations (from multi-survey stacking)
+        # Check original data for NaN pattern first
+        observation_mask_list = []
+        has_missing = False
+
+        for var in self.target_vars:
+            raw_vals = data[var].values
+            # Track which values are observed (not NaN) in ORIGINAL data
+            is_observed = ~np.isnan(raw_vals)
+            if not is_observed.all():
+                has_missing = True
+            observation_mask_list.append(is_observed.astype(np.float32))
+
+        observation_mask_np = np.column_stack(observation_mask_list)
+
+        # Now process transformed values
         targets_list = []
         for var in self.target_vars:
             vals = transformed[var].copy()
+            # Replace NaN with 0 for tensor (masked loss will ignore these)
             vals = np.nan_to_num(vals, nan=0.0)
             targets_list.append(vals)
+
         targets_np = np.column_stack(targets_list)
         targets = torch.tensor(targets_np, dtype=torch.float32)
 
-        # Positive mask for each variable
+        # Observation mask: 1 = observed, 0 = missing (NaN in original data)
+        observation_mask = torch.tensor(observation_mask_np, dtype=torch.float32) if has_missing else None
+
+        # Compute observation frequencies for loss balancing
+        if has_missing:
+            obs_freq = observation_mask_np.mean(axis=0)
+            # Inverse frequency weighting (more weight on rare observations)
+            # Clamp to avoid division by zero and extreme weights
+            self._obs_weights = torch.tensor(
+                1.0 / np.clip(obs_freq, 0.1, 1.0),
+                dtype=torch.float32
+            )
+            if verbose:
+                print(f"  Observation frequencies: {dict(zip(self.target_vars, obs_freq.round(2)))}")
+        else:
+            self._obs_weights = None
+
+        # Positive mask for each variable (only for observed values)
         positive_mask = torch.ones_like(targets)
         for i, var in enumerate(self.target_vars):
-            is_positive = (data[var].values > 0).astype(np.float32)
+            # Use original data for positive check
+            raw_vals = data[var].values
+            is_positive = (raw_vals > 0).astype(np.float32)
+            # NaN values should not be considered positive
+            is_positive = np.where(np.isnan(raw_vals), 0.0, is_positive)
             positive_mask[:, i] = torch.tensor(is_positive)
 
         # Weights
@@ -215,13 +254,15 @@ class Synthesizer:
             hidden_dim=self.hidden_dim,
         )
 
-        # Train flow on positive observations
+        # Train flow on positive observations (with masked loss for missing data)
         self._train_flow(
             targets, context, weights, positive_mask,
             epochs=epochs,
             batch_size=batch_size,
             learning_rate=learning_rate,
             verbose=verbose,
+            observation_mask=observation_mask,
+            dim_weights=self._obs_weights if has_missing else None,
         )
 
         # Train zero indicators
@@ -253,23 +294,57 @@ class Synthesizer:
         batch_size: int,
         learning_rate: float,
         verbose: bool,
+        observation_mask: torch.Tensor = None,
+        dim_weights: torch.Tensor = None,
     ):
-        """Train the normalizing flow model with variance regularization."""
+        """Train the normalizing flow model with variance regularization.
+
+        Args:
+            targets: Target variables [batch, n_targets]
+            context: Context variables [batch, n_context]
+            weights: Sample weights [batch]
+            positive_mask: Which targets are positive (not zero) [batch, n_targets]
+            epochs: Number of training epochs
+            batch_size: Batch size
+            learning_rate: Learning rate
+            verbose: Print progress
+            observation_mask: Optional mask for missing data [batch, n_targets]
+                              1=observed, 0=missing (NaN in original data)
+            dim_weights: Optional per-dimension weights for balancing sparse observations
+        """
+        self._dim_weights = dim_weights
         optimizer = torch.optim.Adam(
             self.flow_model_.parameters(), lr=learning_rate
         )
 
-        # Only train on rows where all target vars are positive
-        all_positive = positive_mask.all(dim=1)
+        # Combine positive_mask with observation_mask if provided
+        # We only want to train on values that are both observed AND positive
+        if observation_mask is not None:
+            train_mask = positive_mask * observation_mask
+        else:
+            train_mask = positive_mask
 
-        if all_positive.sum() < 10:
+        # For multi-survey data, train on all rows (using masked loss)
+        # For single-survey data, can optionally filter to all-positive rows
+        if observation_mask is not None:
+            # Multi-survey mode: use all rows, masked loss handles missing
             train_targets = targets
             train_context = context
             train_weights = weights
+            train_observation_mask = train_mask
         else:
-            train_targets = targets[all_positive]
-            train_context = context[all_positive]
-            train_weights = weights[all_positive]
+            # Single-survey mode: filter to rows where all are positive
+            all_positive = positive_mask.all(dim=1)
+            if all_positive.sum() < 10:
+                train_targets = targets
+                train_context = context
+                train_weights = weights
+                train_observation_mask = None
+            else:
+                train_targets = targets[all_positive]
+                train_context = context[all_positive]
+                train_weights = weights[all_positive]
+                train_observation_mask = None
 
         # Store target statistics for variance regularization and adaptive clipping
         self._train_target_std = train_targets.std(dim=0)
@@ -277,21 +352,35 @@ class Synthesizer:
         self._train_target_max = train_targets.max(dim=0).values
         self._train_target_min = train_targets.min(dim=0).values
 
-        dataset = TensorDataset(train_targets, train_context, train_weights)
+        if train_observation_mask is not None:
+            dataset = TensorDataset(train_targets, train_context, train_weights, train_observation_mask)
+        else:
+            dataset = TensorDataset(train_targets, train_context, train_weights)
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
         self.training_history_ = []
+        self._has_observation_mask = train_observation_mask is not None
 
         for epoch in range(epochs):
             epoch_loss = 0.0
             epoch_var_loss = 0.0
             n_batches = 0
 
-            for batch_targets, batch_context, batch_weights in loader:
+            for batch_data in loader:
+                if self._has_observation_mask:
+                    batch_targets, batch_context, batch_weights, batch_mask = batch_data
+                else:
+                    batch_targets, batch_context, batch_weights = batch_data
+                    batch_mask = None
+
                 optimizer.zero_grad()
 
-                # Standard negative log-likelihood loss
-                log_prob = self.flow_model_.log_prob(batch_targets, batch_context)
+                # Standard negative log-likelihood loss (with optional mask and dim weights)
+                log_prob = self.flow_model_.log_prob(
+                    batch_targets, batch_context,
+                    mask=batch_mask,
+                    dim_weights=self._dim_weights,
+                )
                 nll_loss = -(log_prob * batch_weights).sum() / batch_weights.sum()
 
                 # Variance regularization: penalize log_scale being too small or too large
@@ -342,7 +431,10 @@ class Synthesizer:
         epochs: int,
         learning_rate: float,
     ):
-        """Train binary models for zero/non-zero indicators."""
+        """Train binary models for zero/non-zero indicators.
+
+        Handles NaN values by only training on observed (non-NaN) samples.
+        """
         self.zero_indicators_ = nn.ModuleDict()
 
         for var in self.target_vars:
@@ -351,15 +443,23 @@ class Synthesizer:
                 hidden_dim=self.hidden_dim // 2,
             )
 
+            raw_vals = data[var].values
+            # Only train on observed (non-NaN) values
+            is_observed = ~np.isnan(raw_vals)
+            if is_observed.sum() < 10:
+                # Not enough observed values, use all
+                is_observed = np.ones(len(raw_vals), dtype=bool)
+
             target = torch.tensor(
-                (data[var].values > 0).astype(np.float32)
+                (raw_vals[is_observed] > 0).astype(np.float32)
             ).unsqueeze(-1)
+            var_context = context[is_observed]
 
             optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
             for _ in range(epochs):
                 optimizer.zero_grad()
-                pred = model(context)
+                pred = model(var_context)
                 loss = nn.functional.binary_cross_entropy(pred, target)
                 loss.backward()
                 optimizer.step()
