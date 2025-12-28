@@ -5,9 +5,9 @@ Maps calibration targets from authoritative sources to RAC variables.
 Provides parity with PolicyEngine and other microsimulation frameworks.
 
 Target counts (2021):
-- 209 national targets (IRS SOI, Census, SSA, admin data)
-- 1,989 state-level targets (51 states × 40+ variables)
-- Total: 2,198 targets across 17 categories
+- 241 national targets (IRS SOI, Census, SSA, Fed, admin data)
+- 2,142 state-level targets (51 states × 40+ variables)
+- Total: 2,383 targets across 17 categories
 - 89% mapped to RAC statute references
 """
 
@@ -36,6 +36,7 @@ from microplex.targets.loaders import (
     load_disability_targets,
     load_household_composition_targets,
     load_poverty_targets,
+    load_wealth_targets,
     # Employment
     load_employment_industry_targets,
     # State-level targets
@@ -46,6 +47,8 @@ from microplex.targets.loaders import (
     load_state_snap_targets,
     load_state_medicaid_targets,
     load_state_ssi_targets,
+    load_state_tanf_targets,
+    load_state_housing_targets,
     load_all_state_targets,
     # Combined
     load_all_targets,
@@ -77,6 +80,7 @@ __all__ = [
     "load_disability_targets",
     "load_household_composition_targets",
     "load_poverty_targets",
+    "load_wealth_targets",
     "load_employment_industry_targets",
     # State loaders
     "load_state_demographics_targets",
@@ -86,6 +90,8 @@ __all__ = [
     "load_state_snap_targets",
     "load_state_medicaid_targets",
     "load_state_ssi_targets",
+    "load_state_tanf_targets",
+    "load_state_housing_targets",
     "load_all_state_targets",
     # Combined
     "load_all_targets",

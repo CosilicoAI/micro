@@ -806,7 +806,41 @@ def load_demographics_targets(year: int = 2021, source_path: Optional[Path] = No
         rac_statute="26/6012",
     ))
 
-    # Age distribution
+    # Detailed age distribution (5-year brackets)
+    AGE_GROUPS_DETAILED = {
+        "0_to_4": 19_000_000,
+        "5_to_9": 20_000_000,
+        "10_to_14": 21_000_000,
+        "15_to_19": 21_000_000,
+        "20_to_24": 21_000_000,
+        "25_to_29": 23_000_000,
+        "30_to_34": 23_000_000,
+        "35_to_39": 22_000_000,
+        "40_to_44": 20_000_000,
+        "45_to_49": 20_000_000,
+        "50_to_54": 20_000_000,
+        "55_to_59": 21_000_000,
+        "60_to_64": 21_000_000,
+        "65_to_69": 17_000_000,
+        "70_to_74": 15_000_000,
+        "75_to_79": 10_000_000,
+        "80_to_84": 6_000_000,
+        "85_plus": 7_000_000,
+    }
+
+    for age_group, count in AGE_GROUPS_DETAILED.items():
+        targets.append(Target(
+            name=f"population_{age_group}",
+            category=TargetCategory.AGE_DISTRIBUTION,
+            value=count,
+            year=year,
+            source="Census Bureau ACS",
+            geography="US",
+            is_count=True,
+            rac_variable="age",
+        ))
+
+    # Summary age groups
     AGE_GROUPS = {
         "under_18": 73_000_000,
         "18_to_64": 200_000_000,
@@ -825,6 +859,26 @@ def load_demographics_targets(year: int = 2021, source_path: Optional[Path] = No
             rac_variable="age",
         ))
 
+    # By sex
+    targets.append(Target(
+        name="population_male",
+        category=TargetCategory.POPULATION,
+        value=163_000_000,
+        year=year,
+        source="Census Bureau ACS",
+        geography="US",
+        is_count=True,
+    ))
+    targets.append(Target(
+        name="population_female",
+        category=TargetCategory.POPULATION,
+        value=169_000_000,
+        year=year,
+        source="Census Bureau ACS",
+        geography="US",
+        is_count=True,
+    ))
+
     # Employment
     targets.append(Target(
         name="employed_population",
@@ -836,6 +890,38 @@ def load_demographics_targets(year: int = 2021, source_path: Optional[Path] = No
         is_count=True,
         rac_variable="employment_income",
         rac_statute="26/61/a/1",
+    ))
+
+    targets.append(Target(
+        name="labor_force",
+        category=TargetCategory.EMPLOYMENT,
+        value=161_000_000,
+        year=year,
+        source="BLS",
+        geography="US",
+        is_count=True,
+    ))
+
+    targets.append(Target(
+        name="unemployed_population",
+        category=TargetCategory.UNEMPLOYMENT,
+        value=6_000_000,
+        year=year,
+        source="BLS",
+        geography="US",
+        is_count=True,
+        rac_variable="unemployment_compensation",
+        rac_statute="26/85",
+    ))
+
+    targets.append(Target(
+        name="not_in_labor_force",
+        category=TargetCategory.EMPLOYMENT,
+        value=100_000_000,
+        year=year,
+        source="BLS",
+        geography="US",
+        is_count=True,
     ))
 
     return targets
@@ -1343,6 +1429,70 @@ def load_employment_industry_targets(year: int = 2021) -> List[Target]:
     return targets
 
 
+def load_wealth_targets(year: int = 2021) -> List[Target]:
+    """
+    Load wealth and asset targets from Federal Reserve SCF.
+    """
+    targets = []
+
+    # Median and mean wealth by age (Fed SCF, 2021)
+    WEALTH_BY_AGE = {
+        "under_35": (14_000, 76_000, 17_000_000),
+        "35_to_44": (91_000, 310_000, 23_000_000),
+        "45_to_54": (168_000, 520_000, 22_000_000),
+        "55_to_64": (250_000, 1_175_000, 21_000_000),
+        "65_to_74": (266_000, 1_215_000, 17_000_000),
+        "75_plus": (254_000, 977_000, 15_000_000),
+    }
+
+    for age_group, (median, mean, count) in WEALTH_BY_AGE.items():
+        targets.append(Target(
+            name=f"households_{age_group}",
+            category=TargetCategory.HOUSEHOLD_STRUCTURE,
+            value=count,
+            year=year,
+            source="Federal Reserve SCF",
+            source_url="https://www.federalreserve.gov/econres/scfindex.htm",
+            geography="US",
+            is_count=True,
+            rac_variable="age",
+        ))
+
+    # Homeownership
+    targets.append(Target(
+        name="owner_occupied_households",
+        category=TargetCategory.HOUSEHOLD_STRUCTURE,
+        value=83_000_000,
+        year=year,
+        source="Census Bureau ACS",
+        geography="US",
+        is_count=True,
+    ))
+
+    targets.append(Target(
+        name="renter_households",
+        category=TargetCategory.HOUSEHOLD_STRUCTURE,
+        value=45_000_000,
+        year=year,
+        source="Census Bureau ACS",
+        geography="US",
+        is_count=True,
+    ))
+
+    # Retirement accounts (Fed SCF)
+    targets.append(Target(
+        name="households_with_retirement_accounts",
+        category=TargetCategory.HOUSEHOLD_STRUCTURE,
+        value=65_000_000,
+        year=year,
+        source="Federal Reserve SCF",
+        geography="US",
+        is_count=True,
+    ))
+
+    return targets
+
+
 def load_poverty_targets(year: int = 2021) -> List[Target]:
     """
     Load poverty and income threshold targets from Census.
@@ -1827,6 +1977,129 @@ def load_state_ssi_targets(year: int = 2021) -> List[Target]:
     return targets
 
 
+def load_state_tanf_targets(year: int = 2021) -> List[Target]:
+    """
+    Load state-level TANF caseload from HHS.
+
+    Returns ~50 targets (51 states × 1 TANF variable).
+    """
+    targets = []
+
+    # TANF families by state (HHS ACF, 2021)
+    STATE_TANF = {
+        "AL": 8_000, "AK": 3_500, "AZ": 16_000, "AR": 4_500,
+        "CA": 340_000, "CO": 15_000, "CT": 16_000, "DE": 4_000,
+        "DC": 5_000, "FL": 30_000, "GA": 15_000, "HI": 10_000,
+        "ID": 2_000, "IL": 35_000, "IN": 10_000, "IA": 10_000,
+        "KS": 6_000, "KY": 20_000, "LA": 6_000, "ME": 8_000,
+        "MD": 25_000, "MA": 45_000, "MI": 20_000, "MN": 25_000,
+        "MS": 4_000, "MO": 20_000, "MT": 3_000, "NE": 5_000,
+        "NV": 10_000, "NH": 4_000, "NJ": 25_000, "NM": 15_000,
+        "NY": 150_000, "NC": 18_000, "ND": 1_500, "OH": 40_000,
+        "OK": 8_000, "OR": 25_000, "PA": 60_000, "RI": 8_000,
+        "SC": 8_000, "SD": 2_500, "TN": 25_000, "TX": 22_000,
+        "UT": 5_000, "VT": 4_000, "VA": 20_000, "WA": 45_000,
+        "WV": 8_000, "WI": 20_000, "WY": 500,
+    }
+
+    for state_code, families in STATE_TANF.items():
+        state_fips = {v: k for k, v in STATE_FIPS.items()}.get(state_code, "")
+
+        targets.append(Target(
+            name=f"tanf_families_{state_code}",
+            category=TargetCategory.TANF,
+            value=families,
+            year=year,
+            source="HHS ACF TANF Data",
+            source_url="https://www.acf.hhs.gov/ofa/programs/tanf/data-reports",
+            geography=state_code,
+            state_fips=state_fips,
+            is_count=True,
+            rac_variable="tanf_benefit",
+            rac_statute="42/601",
+        ))
+
+    return targets
+
+
+def load_state_housing_targets(year: int = 2021) -> List[Target]:
+    """
+    Load state-level housing assistance from HUD.
+
+    Returns ~100 targets (51 states × 2 housing variables).
+    """
+    targets = []
+
+    # Housing vouchers by state (HUD, 2021)
+    STATE_VOUCHERS = {
+        "AL": 35_000, "AK": 5_000, "AZ": 45_000, "AR": 20_000,
+        "CA": 350_000, "CO": 45_000, "CT": 45_000, "DE": 8_000,
+        "DC": 12_000, "FL": 130_000, "GA": 75_000, "HI": 12_000,
+        "ID": 10_000, "IL": 115_000, "IN": 50_000, "IA": 20_000,
+        "KS": 20_000, "KY": 40_000, "LA": 55_000, "ME": 15_000,
+        "MD": 55_000, "MA": 95_000, "MI": 75_000, "MN": 45_000,
+        "MS": 25_000, "MO": 50_000, "MT": 8_000, "NE": 15_000,
+        "NV": 25_000, "NH": 10_000, "NJ": 95_000, "NM": 18_000,
+        "NY": 300_000, "NC": 65_000, "ND": 5_000, "OH": 105_000,
+        "OK": 30_000, "OR": 40_000, "PA": 130_000, "RI": 15_000,
+        "SC": 35_000, "SD": 6_000, "TN": 50_000, "TX": 175_000,
+        "UT": 12_000, "VT": 8_000, "VA": 60_000, "WA": 65_000,
+        "WV": 18_000, "WI": 40_000, "WY": 3_000,
+    }
+
+    # Public housing by state (HUD, 2021)
+    STATE_PUBLIC_HOUSING = {
+        "AL": 25_000, "AK": 3_000, "AZ": 10_000, "AR": 8_000,
+        "CA": 55_000, "CO": 10_000, "CT": 18_000, "DE": 4_000,
+        "DC": 8_000, "FL": 35_000, "GA": 35_000, "HI": 8_000,
+        "ID": 2_000, "IL": 45_000, "IN": 15_000, "IA": 5_000,
+        "KS": 5_000, "KY": 18_000, "LA": 22_000, "ME": 5_000,
+        "MD": 18_000, "MA": 45_000, "MI": 25_000, "MN": 18_000,
+        "MS": 15_000, "MO": 15_000, "MT": 2_000, "NE": 5_000,
+        "NV": 5_000, "NH": 5_000, "NJ": 45_000, "NM": 5_000,
+        "NY": 175_000, "NC": 25_000, "ND": 2_000, "OH": 40_000,
+        "OK": 10_000, "OR": 8_000, "PA": 55_000, "RI": 8_000,
+        "SC": 15_000, "SD": 2_000, "TN": 25_000, "TX": 55_000,
+        "UT": 3_000, "VT": 3_000, "VA": 25_000, "WA": 15_000,
+        "WV": 8_000, "WI": 12_000, "WY": 1_000,
+    }
+
+    for state_code, vouchers in STATE_VOUCHERS.items():
+        state_fips = {v: k for k, v in STATE_FIPS.items()}.get(state_code, "")
+
+        targets.append(Target(
+            name=f"housing_vouchers_{state_code}",
+            category=TargetCategory.HOUSING,
+            value=vouchers,
+            year=year,
+            source="HUD Picture of Subsidized Households",
+            source_url="https://www.huduser.gov/portal/datasets/assthsg.html",
+            geography=state_code,
+            state_fips=state_fips,
+            is_count=True,
+            rac_variable="housing_subsidy",
+            rac_statute="42/1437f",
+        ))
+
+    for state_code, public_housing in STATE_PUBLIC_HOUSING.items():
+        state_fips = {v: k for k, v in STATE_FIPS.items()}.get(state_code, "")
+
+        targets.append(Target(
+            name=f"public_housing_{state_code}",
+            category=TargetCategory.HOUSING,
+            value=public_housing,
+            year=year,
+            source="HUD Picture of Subsidized Households",
+            geography=state_code,
+            state_fips=state_fips,
+            is_count=True,
+            rac_variable="housing_subsidy",
+            rac_statute="42/1437",
+        ))
+
+    return targets
+
+
 def load_all_state_targets(year: int = 2021, data_path: Optional[Path] = None) -> List[Target]:
     """Load all state-level targets."""
     targets = []
@@ -1839,6 +2112,8 @@ def load_all_state_targets(year: int = 2021, data_path: Optional[Path] = None) -
     targets.extend(load_state_snap_targets(year))
     targets.extend(load_state_medicaid_targets(year))
     targets.extend(load_state_ssi_targets(year))
+    targets.extend(load_state_tanf_targets(year))
+    targets.extend(load_state_housing_targets(year))
     return targets
 
 
@@ -1883,6 +2158,9 @@ def load_all_targets(year: int = 2021, include_states: bool = True) -> List[Targ
     targets.extend(load_disability_targets(year))
     targets.extend(load_household_composition_targets(year))
     targets.extend(load_poverty_targets(year))
+
+    # Wealth / Assets
+    targets.extend(load_wealth_targets(year))
 
     # Employment
     targets.extend(load_employment_industry_targets(year))
