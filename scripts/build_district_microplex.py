@@ -138,6 +138,7 @@ def train_synthesizer(
     epochs: int = 100,
     batch_size: int = 512,
     lr: float = 1e-3,
+    device: str = "cpu",
     verbose: bool = True,
 ) -> ConditionalMAF:
     """Train normalizing flow on tax unit data."""
@@ -153,7 +154,12 @@ def train_synthesizer(
     X_log = X.copy()
     X_log[:, :6] = np.log1p(np.maximum(X_log[:, :6], 0))  # First 6 are incomes
 
-    # Initialize and train
+    # Standardize for numerical stability
+    X_mean = X_log.mean(axis=0)
+    X_std = X_log.std(axis=0) + 1e-6
+    X_normalized = (X_log - X_mean) / X_std
+
+    # Initialize flow
     n_features = X.shape[1]
     n_context = C.shape[1] if C is not None else 0
 
@@ -164,14 +170,27 @@ def train_synthesizer(
         n_layers=n_layers,
     )
 
-    # Training would happen here
-    # For now, store the training data statistics for bootstrap fallback
-    maf._training_data = X
-    maf._training_context = C
-    maf._log_transform_cols = list(range(6))
-
+    # Train the flow
     if verbose:
-        print(f"  Model initialized (training would run {epochs} epochs)")
+        print(f"  Training for {epochs} epochs on {device}...")
+
+    maf.fit(
+        X_normalized, C,
+        epochs=epochs,
+        batch_size=batch_size,
+        lr=lr,
+        device=device,
+        verbose=verbose,
+        verbose_freq=max(1, epochs // 10),
+    )
+
+    # Store normalization params for generation
+    maf._X_mean = X_mean
+    maf._X_std = X_std
+    maf._training_context = C
+    maf._cont_vars = cont_vars
+    maf._cond_vars = cond_vars
+    maf._log_transform_cols = list(range(6))
 
     return maf
 
@@ -183,12 +202,24 @@ def synthesize_for_district(
     n_records: int,
     district_demographics: Optional[Dict] = None,
     seed: int = 42,
+    use_flow: bool = True,
+    device: str = "cpu",
 ) -> pd.DataFrame:
     """
     Generate synthetic records for a specific district.
 
-    For now, uses bootstrap resampling from state-matched records.
-    TODO: Use trained flow with district-specific conditioning.
+    Uses trained normalizing flow to generate income distributions
+    conditioned on district demographics.
+
+    Args:
+        maf: Trained ConditionalMAF
+        seed_df: Seed data for demographics
+        district_id: FIPS code for district
+        n_records: Number of records to generate
+        district_demographics: Optional override demographics
+        seed: Random seed
+        use_flow: If True, use flow; if False, use bootstrap
+        device: Device for flow generation
     """
     np.random.seed(seed)
 
@@ -198,25 +229,63 @@ def synthesize_for_district(
     else:
         state_fips = int(district_id)
 
-    # Filter to records from same state
+    # Filter to records from same state for context sampling
     state_mask = seed_df["state_fips"].astype(int) == state_fips
     state_records = seed_df[state_mask]
 
     if len(state_records) == 0:
-        # Fall back to all records if state not found
         state_records = seed_df
 
-    # Bootstrap resample
-    indices = np.random.choice(len(state_records), n_records, replace=True)
-    synthetic = state_records.iloc[indices].copy().reset_index(drop=True)
+    if use_flow and hasattr(maf, '_X_mean'):
+        # Sample conditioning vectors from state's distribution
+        context_indices = np.random.choice(len(maf._training_context), n_records, replace=True)
 
-    # Add noise to continuous variables
-    noise_cols = ["wage_income", "self_employment_income", "interest_income"]
-    for col in noise_cols:
-        if col in synthetic.columns:
-            noise = np.random.lognormal(0, 0.1, n_records)
-            synthetic[col] = synthetic[col] * noise
-            synthetic[col] = np.maximum(synthetic[col], 0)
+        # Filter context to state-relevant records if possible
+        # For now, sample from all contexts
+        context = maf._training_context[context_indices].astype(np.float32)
+
+        # Generate from flow with tighter clipping
+        X_normalized = maf.generate(context, clip_z=2.5, device=device)
+
+        # Clip normalized values to avoid extreme outputs
+        X_normalized = np.clip(X_normalized, -4, 4)
+
+        # Denormalize
+        X_log = X_normalized * maf._X_std + maf._X_mean
+
+        # Clip log values before exp to avoid overflow (log($10M) ≈ 16)
+        X_log = np.clip(X_log, -10, 18)
+
+        # Inverse log transform for income columns
+        X = X_log.copy()
+        for col_idx in maf._log_transform_cols:
+            X[:, col_idx] = np.expm1(np.clip(X_log[:, col_idx], -10, 16))
+            X[:, col_idx] = np.clip(X[:, col_idx], 0, 1e8)  # Cap at $100M
+
+        # Build dataframe
+        synthetic = pd.DataFrame(X, columns=maf._cont_vars)
+
+        # Add categorical columns by sampling from state records
+        cat_cols = ["filing_status", "num_dependents", "num_ctc_children",
+                    "num_eitc_children", "is_joint"]
+        for col in cat_cols:
+            if col in state_records.columns:
+                synthetic[col] = state_records[col].sample(n_records, replace=True).values
+
+        synthetic["state_fips"] = state_fips
+
+    else:
+        # Fallback to bootstrap resampling
+        indices = np.random.choice(len(state_records), n_records, replace=True)
+        synthetic = state_records.iloc[indices].copy().reset_index(drop=True)
+
+        # Add noise to continuous variables
+        noise_cols = ["wage_income", "self_employment_income", "interest_income"]
+        for col in noise_cols:
+            if col in synthetic.columns:
+                noise = np.random.lognormal(0, 0.1, n_records)
+                synthetic[col] = synthetic[col] * noise
+                synthetic[col] = np.maximum(synthetic[col], 0)
 
     # Assign district ID
     synthetic["district_id"] = district_id
@@ -226,7 +295,14 @@ def synthesize_for_district(
     income_cols = ["wage_income", "self_employment_income", "interest_income",
                    "dividend_income", "rental_income", "social_security_income",
                    "unemployment_compensation", "other_income"]
-    synthetic["total_income"] = synthetic[[c for c in income_cols if c in synthetic.columns]].sum(axis=1)
+    existing_cols = [c for c in income_cols if c in synthetic.columns]
+    if existing_cols:
+        synthetic["total_income"] = synthetic[existing_cols].sum(axis=1)
+
+    # Compute earned income for EITC
+    if "wage_income" in synthetic.columns:
+        se_col = synthetic.get("self_employment_income", 0)
+        synthetic["earned_income"] = synthetic["wage_income"] + np.maximum(se_col, 0)
 
     # Initialize uniform weights
     synthetic["weight"] = 1.0

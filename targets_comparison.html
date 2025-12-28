@@ -1,0 +1,415 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Microplex Targets Comparison Dashboard</title>
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+            background: #f8fafc;
+            color: #1e293b;
+        }
+        h1 { color: #0f172a; border-bottom: 3px solid #0ea5e9; padding-bottom: 0.5rem; }
+        h2 { color: #334155; margin-top: 2rem; }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1rem 0;
+            background: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        th, td {
+            border: 1px solid #e2e8f0;
+            padding: 0.75rem;
+            text-align: left;
+        }
+        th { background: #0ea5e9; color: white; }
+        tr:nth-child(even) { background: #f8fafc; }
+        .check { color: #22c55e; font-weight: bold; }
+        .cross { color: #ef4444; }
+        .source-card {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+        .source-card h3 { margin-top: 0; color: #0f172a; }
+        .source-card a { color: #0ea5e9; }
+        .good { color: #22c55e; }
+        .warn { color: #f59e0b; }
+        .bad { color: #ef4444; }
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 1rem;
+        }
+        .metric-card {
+            background: linear-gradient(135deg, #0ea5e9, #06b6d4);
+            color: white;
+            padding: 1rem;
+            border-radius: 8px;
+        }
+        .metric-card .value { font-size: 1.5rem; font-weight: bold; }
+        .metric-card .label { opacity: 0.8; }
+    </style>
+</head>
+<body>
+    <h1>🎯 Microplex Targets Comparison Dashboard</h1>
+
+    <p>Comparing calibration targets across microsimulation data sources.
+    Ground truth: <strong>IRS Statistics of Income (SOI) 2021</strong></p>
+
+    <h2>📊 Key Metrics (IRS SOI 2021)</h2>
+    <div class="metric-grid">
+        <div class="metric-card">
+            <div class="value">153.8M</div>
+            <div class="label">Total Tax Returns</div>
+        </div>
+        <div class="metric-card">
+            <div class="value">$14.7T</div>
+            <div class="label">Total AGI</div>
+        </div>
+        <div class="metric-card">
+            <div class="value">$64B</div>
+            <div class="label">Total EITC</div>
+        </div>
+        <div class="metric-card">
+            <div class="value">$122B</div>
+            <div class="label">Total CTC</div>
+        </div>
+    </div>
+
+    <h2>📦 Data Sources</h2>
+
+    <div class="source-card">
+        <h3>Cosilico</h3>
+        <p>Cosilico's calibration targets from IRS SOI and Census</p>
+        <p><a href="https://github.com/CosilicoAI/cosilico-data-sources" target="_blank">https://github.com/CosilicoAI/cosilico-data-sources</a></p>
+    </div>
+
+    <div class="source-card">
+        <h3>PolicyEngine</h3>
+        <p>PolicyEngine's calibration targets for US microsimulation</p>
+        <p><a href="https://github.com/PolicyEngine/policyengine-us-data" target="_blank">https://github.com/PolicyEngine/policyengine-us-data</a></p>
+    </div>
+
+    <div class="source-card">
+        <h3>Yale Tax Simulator</h3>
+        <p>Yale's TAXSIM model targets</p>
+        <p><a href="https://taxsimulator.org/" target="_blank">https://taxsimulator.org/</a></p>
+    </div>
+
+    <div class="source-card">
+        <h3>PSL Tax-Calculator</h3>
+        <p>Policy Simulation Library Tax-Calculator targets</p>
+        <p><a href="https://github.com/PSLmodels/Tax-Calculator" target="_blank">https://github.com/PSLmodels/Tax-Calculator</a></p>
+    </div>
+
+    <div class="source-card">
+        <h3>Tax-Data</h3>
+        <p>PSL Tax-Data project targets for weighting PUF/CPS</p>
+        <p><a href="https://github.com/PSLmodels/taxdata" target="_blank">https://github.com/PSLmodels/taxdata</a></p>
+    </div>
+
+    <h2><span class="check">✓</span> Target Coverage Comparison</h2>
+<table border="1" class="dataframe coverage-table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Target</th>
+      <th>Cosilico</th>
+      <th>PolicyEngine</th>
+      <th>Yale Tax Simulator</th>
+      <th>PSL Tax-Calculator</th>
+      <th>Tax-Data</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>agi_by_bracket</td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="check">✓</span></td>
+    </tr>
+    <tr>
+      <td>agi_distribution</td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="check">✓</span></td>
+      <td><span class="cross">✗</span></td>
+    </tr>
+    <tr>
+      <td>credits</td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="check">✓</span></td>
+    </tr>
+    <tr>
+      <td>deductions</td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="check">✓</span></td>
+    </tr>
+    <tr>
+      <td>demographics</td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="check">✓</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+    </tr>
+    <tr>
+      <td>federal_income_tax</td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="check">✓</span></td>
+      <td><span class="cross">✗</span></td>
+    </tr>
+    <tr>
+      <td>federal_tax_liability</td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="check">✓</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+    </tr>
+    <tr>
+      <td>fica_taxes</td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="check">✓</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+    </tr>
+    <tr>
+      <td>household_structure</td>
+      <td><span class="check">✓</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+    </tr>
+    <tr>
+      <td>housing_subsidies</td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="check">✓</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+    </tr>
+    <tr>
+      <td>income_sources</td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="check">✓</span></td>
+    </tr>
+    <tr>
+      <td>marginal_rates</td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="check">✓</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+    </tr>
+    <tr>
+      <td>medicaid_enrollment</td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="check">✓</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+    </tr>
+    <tr>
+      <td>national_agi_brackets</td>
+      <td><span class="check">✓</span></td>
+      <td><span class="check">✓</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+    </tr>
+    <tr>
+      <td>payroll_tax</td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="check">✓</span></td>
+      <td><span class="cross">✗</span></td>
+    </tr>
+    <tr>
+      <td>population_by_age</td>
+      <td><span class="check">✓</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+    </tr>
+    <tr>
+      <td>snap_participation</td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="check">✓</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+    </tr>
+    <tr>
+      <td>state_demographics</td>
+      <td><span class="check">✓</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+    </tr>
+    <tr>
+      <td>state_income_distribution</td>
+      <td><span class="check">✓</span></td>
+      <td><span class="check">✓</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+    </tr>
+    <tr>
+      <td>state_tax_liability</td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="check">✓</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+    </tr>
+    <tr>
+      <td>state_weights</td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+    </tr>
+    <tr>
+      <td>tax_credits</td>
+      <td><span class="check">✓</span></td>
+      <td><span class="check">✓</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+    </tr>
+    <tr>
+      <td>tax_expenditures</td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="cross">✗</span></td>
+      <td><span class="check">✓</span></td>
+      <td><span class="cross">✗</span></td>
+    </tr>
+  </tbody>
+</table>
+    <h2>📈 Target Value Comparison</h2>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Metric</th>
+      <th>Source</th>
+      <th>Value</th>
+      <th>IRS SOI</th>
+      <th>Error (%)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Total Returns</td>
+      <td>Cosilico</td>
+      <td>161,165,563</td>
+      <td>153,774,320</td>
+      <td>+4.8%</td>
+    </tr>
+  </tbody>
+</table>
+    <h2>🗺️ Geographic Granularity</h2>
+    <table>
+        <tr><th>Source</th><th>National</th><th>State</th><th>County</th><th>ZIP</th></tr>
+        <tr><td>Cosilico</td><td class="check">✓</td><td class="check">✓</td><td>🚧</td><td>🚧</td></tr>
+        <tr><td>PolicyEngine</td><td class="check">✓</td><td class="check">✓</td><td class="cross">✗</td><td class="cross">✗</td></tr>
+        <tr><td>Yale TAXSIM</td><td class="check">✓</td><td class="check">✓</td><td class="cross">✗</td><td class="cross">✗</td></tr>
+        <tr><td>PSL Tax-Calculator</td><td class="check">✓</td><td class="cross">✗</td><td class="cross">✗</td><td class="cross">✗</td></tr>
+    </table>
+
+    <h2>📋 Target Categories</h2>
+    <table>
+        <tr><th>Category</th><th>Cosilico</th><th>PolicyEngine</th><th>Yale</th><th>PSL</th></tr>
+        <tr>
+            <td>Income Distribution (AGI brackets)</td>
+            <td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td>
+        </tr>
+        <tr>
+            <td>Tax Credits (EITC, CTC, ACTC)</td>
+            <td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td>
+        </tr>
+        <tr>
+            <td>Benefits (SNAP, Medicaid, Housing)</td>
+            <td>🚧</td><td class="check">✓</td><td class="cross">✗</td><td class="cross">✗</td>
+        </tr>
+        <tr>
+            <td>Demographics (age, family structure)</td>
+            <td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="cross">✗</td>
+        </tr>
+        <tr>
+            <td>Employment (wages, SE income)</td>
+            <td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td>
+        </tr>
+        <tr>
+            <td>Capital Income (interest, dividends, gains)</td>
+            <td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td>
+        </tr>
+        <tr>
+            <td>Deductions (itemized, charitable)</td>
+            <td>🚧</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td>
+        </tr>
+        <tr>
+            <td>Business Income (S-corp, partnership)</td>
+            <td>🚧</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td>
+        </tr>
+    </table>
+
+    <h2>🔧 Calibration Methods</h2>
+    <table>
+        <tr><th>Source</th><th>Method</th><th>Sparsity</th></tr>
+        <tr>
+            <td>Cosilico</td>
+            <td>Cross-Category Selection + IPF (SparseCalibrator)</td>
+            <td class="check">✓ Controllable</td>
+        </tr>
+        <tr>
+            <td>PolicyEngine</td>
+            <td>Gradient Descent with relative loss</td>
+            <td class="cross">✗ Dense</td>
+        </tr>
+        <tr>
+            <td>Yale TAXSIM</td>
+            <td>Hot-deck imputation</td>
+            <td>N/A</td>
+        </tr>
+        <tr>
+            <td>PSL Tax-Data</td>
+            <td>Linear Programming (LP)</td>
+            <td class="cross">✗ Dense</td>
+        </tr>
+    </table>
+
+    <footer style="margin-top: 3rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; color: #64748b;">
+        Generated by <a href="https://github.com/CosilicoAI/microplex">Microplex</a> |
+        Data: IRS SOI 2021, Census ACS, DOL |
+        Last updated: 2024
+    </footer>
+</body>
+</html>

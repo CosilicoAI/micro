@@ -1,0 +1,153 @@
+{
+  "irs_soi_2021": {
+    "returns_by_agi": {
+      "no_agi": 13992100,
+      "under_1": 1686440,
+      "1_to_5k": 5183390,
+      "5k_to_10k": 7929860,
+      "10k_to_15k": 9883050,
+      "15k_to_20k": 9113990,
+      "20k_to_25k": 8186640,
+      "25k_to_30k": 7407890,
+      "30k_to_40k": 13194450,
+      "40k_to_50k": 10930780,
+      "50k_to_75k": 19494660,
+      "75k_to_100k": 15137070,
+      "100k_to_200k": 22849380,
+      "200k_to_500k": 7167290,
+      "500k_to_1m": 1106040,
+      "1m_plus": 664340
+    },
+    "agi_by_bracket": {
+      "under_1": -94000000000,
+      "1_to_5k": 15000000000,
+      "5k_to_10k": 59000000000,
+      "10k_to_15k": 123000000000,
+      "15k_to_20k": 160000000000,
+      "20k_to_25k": 184000000000,
+      "25k_to_30k": 204000000000,
+      "30k_to_40k": 461000000000,
+      "40k_to_50k": 492000000000,
+      "50k_to_75k": 1210000000000,
+      "75k_to_100k": 1316000000000,
+      "100k_to_200k": 3187000000000,
+      "200k_to_500k": 2161000000000,
+      "500k_to_1m": 762000000000,
+      "1m_plus": 4466000000000
+    },
+    "total_returns": 153774320,
+    "total_agi": 14706000000000,
+    "eitc_claims": 31000000,
+    "eitc_amount": 64000000000,
+    "ctc_claims": 48000000,
+    "ctc_amount": 122000000000
+  },
+  "sources": {
+    "Cosilico": {
+      "url": "https://github.com/CosilicoAI/cosilico-data-sources",
+      "description": "Cosilico's calibration targets from IRS SOI and Census",
+      "coverage": {
+        "state_income_distribution": true,
+        "national_agi_brackets": true,
+        "tax_credits": true,
+        "state_demographics": true,
+        "population_by_age": true,
+        "household_structure": true
+      },
+      "targets": {
+        "returns_by_agi": {
+          "100k_to_200k": 27398163,
+          "10k_to_25k": 24174848,
+          "1_to_10k": 19339874,
+          "1m_plus": 1611636,
+          "200k_to_500k": 12893238,
+          "25k_to_50k": 29009810,
+          "500k_to_1m": 3223298,
+          "50k_to_75k": 22563188,
+          "75k_to_100k": 17728210,
+          "under_1": 3223298
+        },
+        "agi_by_bracket": {
+          "100k_to_200k": 3121424460000,
+          "10k_to_25k": 425648790000,
+          "1_to_10k": 141882930000,
+          "1m_plus": 2553892740000,
+          "200k_to_500k": 2553892740000,
+          "25k_to_50k": 1135063440000,
+          "500k_to_1m": 1418829300000,
+          "50k_to_75k": 1418829300000,
+          "75k_to_100k": 1418829300000,
+          "under_1": 0
+        },
+        "eitc_claims": "28848157",
+        "eitc_amount": "89365599264",
+        "ctc_claims": "37068101",
+        "ctc_amount": "72996476755"
+      }
+    },
+    "PolicyEngine": {
+      "url": "https://github.com/PolicyEngine/policyengine-us-data",
+      "description": "PolicyEngine's calibration targets for US microsimulation",
+      "coverage": {
+        "national_agi_brackets": true,
+        "state_income_distribution": true,
+        "tax_credits": true,
+        "demographics": true,
+        "snap_participation": true,
+        "medicaid_enrollment": true,
+        "housing_subsidies": true
+      },
+      "targets": {
+        "returns_by_agi": {
+          "Categories": "16 AGI brackets matching IRS SOI",
+          "Source": "IRS Statistics of Income"
+        }
+      }
+    },
+    "Yale Tax Simulator": {
+      "url": "https://taxsimulator.org/",
+      "description": "Yale's TAXSIM model targets",
+      "coverage": {
+        "federal_tax_liability": true,
+        "state_tax_liability": true,
+        "fica_taxes": true,
+        "marginal_rates": true
+      },
+      "targets": {
+        "data_source": "CPS ASEC with SOI adjustments",
+        "years": "1960-2023",
+        "granularity": "State-level for state taxes"
+      }
+    },
+    "PSL Tax-Calculator": {
+      "url": "https://github.com/PSLmodels/Tax-Calculator",
+      "description": "Policy Simulation Library Tax-Calculator targets",
+      "coverage": {
+        "federal_income_tax": true,
+        "payroll_tax": true,
+        "agi_distribution": true,
+        "tax_expenditures": true
+      },
+      "targets": {
+        "data_source": "IRS PUF (primary) + CPS (benefits)",
+        "granularity": "National only",
+        "weights": "SOI-adjusted"
+      }
+    },
+    "Tax-Data": {
+      "url": "https://github.com/PSLmodels/taxdata",
+      "description": "PSL Tax-Data project targets for weighting PUF/CPS",
+      "coverage": {
+        "agi_by_bracket": true,
+        "income_sources": true,
+        "deductions": true,
+        "credits": true,
+        "state_weights": false
+      },
+      "targets": {
+        "calibration_method": "Linear programming (LP)",
+        "data_sources": "IRS SOI, CBO, Census"
+      }
+    }
+  }
+}

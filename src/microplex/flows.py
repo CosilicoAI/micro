@@ -402,3 +402,122 @@ class ConditionalMAF(nn.Module):
             z = z[:, inv_perm]
 
         return z
+
+    def fit(
+        self,
+        X: np.ndarray,
+        context: np.ndarray,
+        epochs: int = 100,
+        batch_size: int = 256,
+        lr: float = 1e-3,
+        weight_decay: float = 1e-5,
+        verbose: bool = True,
+        verbose_freq: int = 10,
+        clip_grad: float = 5.0,
+        device: str = "cpu",
+    ) -> "ConditionalMAF":
+        """
+        Train the flow on data.
+
+        Args:
+            X: Training data [n_samples, n_features]
+            context: Conditioning data [n_samples, n_context]
+            epochs: Number of training epochs
+            batch_size: Batch size
+            lr: Learning rate
+            weight_decay: L2 regularization
+            verbose: Print progress
+            verbose_freq: Print every N epochs
+            clip_grad: Gradient clipping norm
+            device: Device to train on
+
+        Returns:
+            self for chaining
+        """
+        self.to(device)
+        self.train()
+
+        # Convert to tensors
+        X_t = torch.tensor(X, dtype=torch.float32, device=device)
+        C_t = torch.tensor(context, dtype=torch.float32, device=device)
+
+        # Optimizer
+        optimizer = torch.optim.AdamW(
+            self.parameters(), lr=lr, weight_decay=weight_decay
+        )
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=epochs, eta_min=lr * 0.01
+        )
+
+        n_samples = len(X_t)
+        n_batches = (n_samples + batch_size - 1) // batch_size
+
+        # Store training stats
+        self.training_losses_ = []
+
+        for epoch in range(epochs):
+            # Shuffle data
+            perm = torch.randperm(n_samples, device=device)
+            X_shuffled = X_t[perm]
+            C_shuffled = C_t[perm]
+
+            epoch_loss = 0.0
+
+            for i in range(n_batches):
+                start = i * batch_size
+                end = min(start + batch_size, n_samples)
+
+                X_batch = X_shuffled[start:end]
+                C_batch = C_shuffled[start:end]
+
+                optimizer.zero_grad()
+
+                # Negative log likelihood
+                log_prob = self.log_prob(X_batch, C_batch)
+                loss = -log_prob.mean()
+
+                loss.backward()
+
+                # Gradient clipping
+                if clip_grad > 0:
+                    torch.nn.utils.clip_grad_norm_(self.parameters(), clip_grad)
+
+                optimizer.step()
+                epoch_loss += loss.item()
+
+            scheduler.step()
+
+            avg_loss = epoch_loss / n_batches
+            self.training_losses_.append(avg_loss)
+
+            if verbose and (epoch % verbose_freq == 0 or epoch == epochs - 1):
+                print(f"  Epoch {epoch:4d}: loss = {avg_loss:.4f}")
+
+        self.eval()
+        return self
+
+    def generate(
+        self,
+        context: np.ndarray,
+        clip_z: float = 3.0,
+        device: str = "cpu",
+    ) -> np.ndarray:
+        """
+        Generate samples given context (numpy interface).
+
+        Args:
+            context: Conditioning data [n_samples, n_context]
+            clip_z: Clip base distribution samples to avoid outliers
+            device: Device to use
+
+        Returns:
+            Generated samples [n_samples, n_features]
+        """
+        self.eval()
+        self.to(device)
+
+        with torch.no_grad():
+            C_t = torch.tensor(context, dtype=torch.float32, device=device)
+            samples = self.sample(C_t, clip_z=clip_z)
+
+        return samples.cpu().numpy()
