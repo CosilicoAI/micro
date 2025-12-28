@@ -127,16 +127,23 @@ def load_soi_targets(year: int = 2021, source_path: Optional[Path] = None) -> Li
     # Income source totals (IRS SOI Table 1.4, 2021)
     INCOME_SOURCES = {
         "wages_and_salaries": (9_909_000_000_000, "employment_income", "26/61/a/1"),
-        "taxable_interest": (187_000_000_000, "interest_income", "26/61/a/4"),
+        "taxable_interest": (187_000_000_000, "taxable_interest_income", "26/61/a/4"),
+        "tax_exempt_interest": (71_000_000_000, "tax_exempt_interest_income", "26/103"),
         "ordinary_dividends": (412_000_000_000, "dividend_income", "26/61/a/7"),
         "qualified_dividends": (297_000_000_000, "qualified_dividend_income", "26/1/h/11"),
         "business_income": (419_000_000_000, "self_employment_income", "26/1402"),
+        "business_losses": (128_000_000_000, "business_net_losses", "26/1402"),
         "capital_gains": (2_531_000_000_000, "capital_gains", "26/1222"),
-        "ira_distributions": (312_000_000_000, "pension_income", "26/72"),
+        "capital_losses": (23_000_000_000, "capital_gains_losses", "26/1211"),
+        "ira_distributions": (312_000_000_000, "ira_distributions", "26/408"),
         "pensions_annuities": (749_000_000_000, "pension_income", "26/72"),
         "social_security": (625_000_000_000, "social_security_income", "26/86"),
-        "partnership_s_corp": (1_113_000_000_000, "partnership_s_corp_income", "26/702"),
-        "rental_royalty": (156_000_000_000, "rental_income", "26/61/a/5"),
+        "partnership_s_corp_income": (1_113_000_000_000, "partnership_s_corp_income", "26/702"),
+        "partnership_s_corp_losses": (241_000_000_000, "partnership_s_corp_losses", "26/702"),
+        "rental_royalty_income": (156_000_000_000, "rental_income", "26/61/a/5"),
+        "rental_royalty_losses": (89_000_000_000, "rental_losses", "26/469"),
+        "estate_trust_income": (47_000_000_000, "estate_income", "26/641"),
+        "estate_trust_losses": (12_000_000_000, "estate_losses", "26/641"),
         "unemployment": (129_000_000_000, "unemployment_compensation", "26/85"),
     }
 
@@ -414,6 +421,327 @@ def load_medicaid_targets(year: int = 2021, source_path: Optional[Path] = None) 
     return targets
 
 
+def load_ssi_targets(year: int = 2021, source_path: Optional[Path] = None) -> List[Target]:
+    """Load Supplemental Security Income targets from SSA."""
+    targets = []
+
+    # SSI totals (SSA, 2021)
+    targets.append(Target(
+        name="ssi_recipients",
+        category=TargetCategory.SSI,
+        value=7_800_000,
+        year=year,
+        source="SSA SSI Statistics",
+        source_url="https://www.ssa.gov/policy/docs/statcomps/ssi_asr/",
+        geography="US",
+        is_count=True,
+        rac_variable="ssi_benefit",
+        rac_statute="42/1382",
+        microdata_column="ssi",
+    ))
+
+    targets.append(Target(
+        name="ssi_payments",
+        category=TargetCategory.SSI,
+        value=59_000_000_000,
+        year=year,
+        source="SSA SSI Statistics",
+        source_url="https://www.ssa.gov/policy/docs/statcomps/ssi_asr/",
+        geography="US",
+        is_count=False,
+        rac_variable="ssi_benefit",
+        rac_statute="42/1382",
+        microdata_column="ssi",
+    ))
+
+    return targets
+
+
+def load_tanf_targets(year: int = 2021, source_path: Optional[Path] = None) -> List[Target]:
+    """Load TANF cash assistance targets from HHS."""
+    targets = []
+
+    # TANF totals (HHS ACF, 2021)
+    targets.append(Target(
+        name="tanf_families",
+        category=TargetCategory.TANF,
+        value=1_100_000,
+        year=year,
+        source="HHS ACF TANF Data",
+        source_url="https://www.acf.hhs.gov/ofa/programs/tanf/data-reports",
+        geography="US",
+        is_count=True,
+        rac_variable="tanf_benefit",
+        rac_statute="42/601",
+        microdata_column="tanf",
+    ))
+
+    targets.append(Target(
+        name="tanf_recipients",
+        category=TargetCategory.TANF,
+        value=2_400_000,
+        year=year,
+        source="HHS ACF TANF Data",
+        source_url="https://www.acf.hhs.gov/ofa/programs/tanf/data-reports",
+        geography="US",
+        is_count=True,
+        rac_variable="tanf_benefit",
+        rac_statute="42/601",
+        microdata_column="tanf",
+        notes="Individual recipients",
+    ))
+
+    targets.append(Target(
+        name="tanf_expenditures",
+        category=TargetCategory.TANF,
+        value=16_000_000_000,
+        year=year,
+        source="HHS ACF TANF Data",
+        source_url="https://www.acf.hhs.gov/ofa/programs/tanf/data-reports",
+        geography="US",
+        is_count=False,
+        rac_variable="tanf_benefit",
+        rac_statute="42/601",
+        microdata_column="tanf",
+        notes="Total federal and state TANF expenditures",
+    ))
+
+    return targets
+
+
+def load_housing_targets(year: int = 2021, source_path: Optional[Path] = None) -> List[Target]:
+    """Load housing assistance targets from HUD."""
+    targets = []
+
+    # Housing assistance totals (HUD, 2021)
+    targets.append(Target(
+        name="housing_voucher_households",
+        category=TargetCategory.HOUSING,
+        value=2_300_000,
+        year=year,
+        source="HUD Picture of Subsidized Households",
+        source_url="https://www.huduser.gov/portal/datasets/assthsg.html",
+        geography="US",
+        is_count=True,
+        rac_variable="housing_subsidy",
+        rac_statute="42/1437f",
+        microdata_column="housing_subsidy",
+        notes="Section 8 Housing Choice Voucher households",
+    ))
+
+    targets.append(Target(
+        name="public_housing_households",
+        category=TargetCategory.HOUSING,
+        value=920_000,
+        year=year,
+        source="HUD Picture of Subsidized Households",
+        source_url="https://www.huduser.gov/portal/datasets/assthsg.html",
+        geography="US",
+        is_count=True,
+        rac_variable="housing_subsidy",
+        rac_statute="42/1437",
+        microdata_column="housing_subsidy",
+        notes="Public housing residents",
+    ))
+
+    targets.append(Target(
+        name="housing_assistance_spending",
+        category=TargetCategory.HOUSING,
+        value=52_000_000_000,
+        year=year,
+        source="HUD Budget",
+        source_url="https://www.hud.gov/budget",
+        geography="US",
+        is_count=False,
+        rac_variable="housing_subsidy",
+        rac_statute="42/1437f",
+        microdata_column="housing_subsidy",
+    ))
+
+    return targets
+
+
+def load_aca_targets(year: int = 2021, source_path: Optional[Path] = None) -> List[Target]:
+    """Load ACA/marketplace targets from CMS."""
+    targets = []
+
+    # ACA marketplace totals (CMS, 2021)
+    targets.append(Target(
+        name="marketplace_enrollment",
+        category=TargetCategory.OTHER_CREDITS,
+        value=12_000_000,
+        year=year,
+        source="CMS Marketplace Enrollment",
+        source_url="https://www.cms.gov/research-statistics-data-and-systems",
+        geography="US",
+        is_count=True,
+        rac_variable="premium_tax_credit",
+        rac_statute="26/36B",
+        microdata_column="marketplace_enrollment",
+    ))
+
+    targets.append(Target(
+        name="premium_tax_credit_recipients",
+        category=TargetCategory.OTHER_CREDITS,
+        value=9_000_000,
+        year=year,
+        source="CMS Marketplace Enrollment",
+        source_url="https://www.cms.gov/research-statistics-data-and-systems",
+        geography="US",
+        is_count=True,
+        rac_variable="premium_tax_credit",
+        rac_statute="26/36B",
+        microdata_column="premium_tax_credit",
+        notes="Marketplace enrollees receiving PTC",
+    ))
+
+    targets.append(Target(
+        name="premium_tax_credit_amount",
+        category=TargetCategory.OTHER_CREDITS,
+        value=57_000_000_000,
+        year=year,
+        source="CMS/Treasury",
+        source_url="https://www.cms.gov/research-statistics-data-and-systems",
+        geography="US",
+        is_count=False,
+        rac_variable="premium_tax_credit",
+        rac_statute="26/36B",
+        microdata_column="premium_tax_credit",
+    ))
+
+    return targets
+
+
+def load_wic_targets(year: int = 2021, source_path: Optional[Path] = None) -> List[Target]:
+    """Load WIC (Women, Infants, and Children) targets from USDA."""
+    targets = []
+
+    # WIC totals (USDA FNS, 2021)
+    targets.append(Target(
+        name="wic_participants",
+        category=TargetCategory.SNAP,  # Grouped with nutrition
+        value=6_200_000,
+        year=year,
+        source="USDA FNS WIC Data",
+        source_url="https://www.fns.usda.gov/pd/wic-program",
+        geography="US",
+        is_count=True,
+        rac_variable="wic",
+        rac_statute="42/1786",
+        microdata_column="wic",
+    ))
+
+    targets.append(Target(
+        name="wic_expenditures",
+        category=TargetCategory.SNAP,
+        value=5_000_000_000,
+        year=year,
+        source="USDA FNS WIC Data",
+        source_url="https://www.fns.usda.gov/pd/wic-program",
+        geography="US",
+        is_count=False,
+        rac_variable="wic",
+        rac_statute="42/1786",
+        microdata_column="wic",
+    ))
+
+    return targets
+
+
+def load_other_benefit_targets(year: int = 2021, source_path: Optional[Path] = None) -> List[Target]:
+    """Load other benefit program targets (school lunch, LIHEAP, CCDF)."""
+    targets = []
+
+    # School lunch (USDA, 2021)
+    targets.append(Target(
+        name="free_school_lunch_participants",
+        category=TargetCategory.SNAP,
+        value=22_000_000,
+        year=year,
+        source="USDA FNS School Meals",
+        source_url="https://www.fns.usda.gov/pd/child-nutrition-tables",
+        geography="US",
+        is_count=True,
+        rac_variable="school_lunch",
+        rac_statute="42/1758",
+        microdata_column="school_lunch",
+        notes="Free lunch participants",
+    ))
+
+    targets.append(Target(
+        name="reduced_price_lunch_participants",
+        category=TargetCategory.SNAP,
+        value=2_500_000,
+        year=year,
+        source="USDA FNS School Meals",
+        geography="US",
+        is_count=True,
+        rac_variable="school_lunch",
+        rac_statute="42/1758",
+        microdata_column="school_lunch",
+        notes="Reduced-price lunch participants",
+    ))
+
+    # LIHEAP (HHS, 2021)
+    targets.append(Target(
+        name="liheap_households",
+        category=TargetCategory.HOUSING,
+        value=5_400_000,
+        year=year,
+        source="HHS LIHEAP Data",
+        source_url="https://www.acf.hhs.gov/ocs/programs/liheap",
+        geography="US",
+        is_count=True,
+        rac_variable="liheap",
+        rac_statute="42/8621",
+        microdata_column="liheap",
+    ))
+
+    targets.append(Target(
+        name="liheap_expenditures",
+        category=TargetCategory.HOUSING,
+        value=5_000_000_000,
+        year=year,
+        source="HHS LIHEAP Data",
+        geography="US",
+        is_count=False,
+        rac_variable="liheap",
+        rac_statute="42/8621",
+        microdata_column="liheap",
+    ))
+
+    # CCDF Child Care (HHS, 2021)
+    targets.append(Target(
+        name="ccdf_children",
+        category=TargetCategory.OTHER_CREDITS,
+        value=1_400_000,
+        year=year,
+        source="HHS ACF CCDF Data",
+        source_url="https://www.acf.hhs.gov/occ/data",
+        geography="US",
+        is_count=True,
+        rac_variable="ccdf",
+        rac_statute="42/9858",
+        microdata_column="ccdf",
+        notes="Children receiving CCDF child care subsidies",
+    ))
+
+    targets.append(Target(
+        name="ccdf_expenditures",
+        category=TargetCategory.OTHER_CREDITS,
+        value=11_000_000_000,
+        year=year,
+        source="HHS ACF CCDF Data",
+        geography="US",
+        is_count=False,
+        rac_variable="ccdf",
+        rac_statute="42/9858",
+        microdata_column="ccdf",
+    ))
+
+    return targets
+
+
 def load_demographics_targets(year: int = 2021, source_path: Optional[Path] = None) -> List[Target]:
     """
     Load demographic targets from Census.
@@ -494,10 +822,20 @@ def load_demographics_targets(year: int = 2021, source_path: Optional[Path] = No
 def load_all_targets(year: int = 2021) -> List[Target]:
     """Load all available targets for a year."""
     targets = []
+    # IRS SOI income/deduction targets
     targets.extend(load_soi_targets(year))
+    # Tax credits
     targets.extend(load_eitc_targets(year))
     targets.extend(load_ctc_targets(year))
+    targets.extend(load_aca_targets(year))
+    # Benefits
     targets.extend(load_snap_targets(year))
     targets.extend(load_medicaid_targets(year))
+    targets.extend(load_ssi_targets(year))
+    targets.extend(load_tanf_targets(year))
+    targets.extend(load_housing_targets(year))
+    targets.extend(load_wic_targets(year))
+    targets.extend(load_other_benefit_targets(year))
+    # Demographics
     targets.extend(load_demographics_targets(year))
     return targets

@@ -304,6 +304,38 @@ RAC_VARIABLE_MAP: Dict[str, RACVariable] = {
         dtype="Money",
         period="Month",
     ),
+    "wic": RACVariable(
+        name="wic",
+        statute="42/1786",
+        description="Women, Infants, and Children program",
+        entity="Person",
+        dtype="Money",
+        period="Month",
+    ),
+    "school_lunch": RACVariable(
+        name="school_lunch",
+        statute="42/1758",
+        description="National School Lunch Program",
+        entity="Person",
+        dtype="Money",
+        period="Year",
+    ),
+    "liheap": RACVariable(
+        name="liheap",
+        statute="42/8621",
+        description="Low Income Home Energy Assistance Program",
+        entity="Household",
+        dtype="Money",
+        period="Year",
+    ),
+    "ccdf": RACVariable(
+        name="ccdf",
+        statute="42/9858",
+        description="Child Care and Development Fund",
+        entity="Person",
+        dtype="Money",
+        period="Month",
+    ),
 
     # Demographics (not statutory but needed for calibration)
     "age": RACVariable(
