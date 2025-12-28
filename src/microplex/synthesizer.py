@@ -109,6 +109,7 @@ class Synthesizer:
         self._train_target_std: Optional[torch.Tensor] = None  # Store target std for variance reg
         self._train_target_max: Optional[torch.Tensor] = None  # Store max for clipping calibration
         self._original_scale_stats: Optional[Dict[str, Dict[str, float]]] = None  # Original scale stats for clipping
+        self._training_data: Optional[pd.DataFrame] = None  # Store for full synthesis
 
     def fit(
         self,
@@ -137,6 +138,9 @@ class Synthesizer:
         Returns:
             self
         """
+        # Store training data for full synthesis mode
+        self._training_data = data[self.condition_vars + self.target_vars].copy()
+
         # Prepare data dict for transforms
         data_dict = {col: data[col].values for col in data.columns}
 
@@ -495,6 +499,44 @@ class Synthesizer:
                 result[var] = original_dict[var]
 
         return result
+
+    def sample(
+        self,
+        n: int,
+        seed: Optional[int] = None,
+    ) -> pd.DataFrame:
+        """
+        Generate fully synthetic records (both conditions and targets).
+
+        For full synthesis mode - samples conditions from training distribution,
+        then generates targets conditioned on those.
+
+        Args:
+            n: Number of synthetic records to generate
+            seed: Random seed for reproducibility
+
+        Returns:
+            DataFrame with all variables (conditions + targets)
+        """
+        if not self.is_fitted_:
+            raise ValueError("Synthesizer not fitted. Call fit() first.")
+
+        if self._training_data is None:
+            raise ValueError(
+                "Full synthesis requires training data. "
+                "Re-fit with store_training_data=True or use generate() with conditions."
+            )
+
+        if seed is not None:
+            np.random.seed(seed)
+
+        # Sample conditions from training distribution (with replacement)
+        train_conditions = self._training_data[self.condition_vars]
+        sampled_idx = np.random.choice(len(train_conditions), size=n, replace=True)
+        conditions = train_conditions.iloc[sampled_idx].reset_index(drop=True)
+
+        # Generate targets conditioned on sampled conditions
+        return self.generate(conditions, seed=seed)
 
     def save(self, path: Union[str, Path]) -> None:
         """Save fitted model to disk."""

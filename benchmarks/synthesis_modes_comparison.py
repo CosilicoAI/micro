@@ -259,8 +259,25 @@ print("=" * 80)
 
 full_synthesis_results = []
 
-# microplex (can only do imputation, not full synthesis)
-print("\n[1] microplex - N/A for full synthesis (requires conditions)")
+# microplex (now supports full synthesis via sample())
+print("\n[1] microplex (JOINT - full synthesis via sample())...")
+try:
+    start = time.time()
+    model = Synthesizer(
+        target_vars=target_vars,
+        condition_vars=condition_vars,
+        n_layers=6, hidden_dim=64, zero_inflated=True,
+    )
+    model.fit(train_data, epochs=50, batch_size=256, verbose=False)
+    synthetic = model.sample(len(test_data), seed=42)
+
+    res = evaluate_full(synthetic, test_data, "microplex")
+    res["time"] = time.time() - start
+    full_synthesis_results.append(res)
+    print(f"  ✓ Cond MMD={res['cond_mmd']:.4f}, Target MMD={res['target_mmd']:.4f}, Joint MMD={res['joint_mmd']:.4f}")
+except Exception as e:
+    print(f"  ✗ {e}")
+    import traceback; traceback.print_exc()
 
 # CT-GAN
 print("\n[2] CT-GAN (JOINT - true full synthesis)...")
@@ -373,10 +390,12 @@ METHOD TYPES:
 SYNTHESIS MODES:
   IMPUTATION: Use when you have real demographics, need synthetic targets
     → Filtering methods (NND.hotdeck) excel here
+    → microplex.generate(conditions) for model-based
 
   FULL SYNTHESIS: Use when you need entirely synthetic microdata
-    → Joint methods (CT-GAN, TVAE) required
-    → microplex currently imputation-only
+    → microplex.sample(n) - samples conditions from training, generates targets
+    → CT-GAN/TVAE - generate both from scratch
+    → microplex has best condition match (samples real), CT-GAN best joint
 """)
 
 # Save results
