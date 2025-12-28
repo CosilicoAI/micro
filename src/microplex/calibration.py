@@ -782,9 +782,9 @@ class SparseCalibrator:
             w0 = np.ones(len(data), dtype=float)
 
         # Compute step size for FISTA (1 / L where L is Lipschitz constant)
-        # L = largest eigenvalue of A.T @ A
-        AtA = A_norm.T @ A_norm
-        L = np.linalg.eigvalsh(AtA).max()
+        # L = largest eigenvalue of A.T @ A = largest singular value of A squared
+        # Use power iteration to estimate without forming A.T @ A explicitly
+        L = self._estimate_lipschitz(A_norm)
         step_size = 1.0 / max(L, 1e-10)
 
         if self.target_sparsity is not None:
@@ -814,40 +814,139 @@ class SparseCalibrator:
         data: pd.DataFrame,
         marginal_targets: Dict[str, Dict[str, float]],
         continuous_targets: Optional[Dict[str, float]],
+        use_sparse: bool = True,
     ) -> tuple[np.ndarray, np.ndarray, List[str]]:
-        """Build constraint matrix A, target vector b, and target names."""
-        constraints = []
+        """Build constraint matrix A, target vector b, and target names.
+
+        Uses sparse matrices by default when there are many categorical constraints.
+        """
+        from scipy import sparse
+
+        n_records = len(data)
+        rows = []
+        cols = []
+        vals = []
         targets = []
         names = []
 
         # Track which constraints are categorical (for cross-category selection)
         self._n_categorical_constraints = 0
+        row_idx = 0
 
-        # Categorical constraints first
+        # Categorical constraints first - build as sparse
         for var, var_targets in marginal_targets.items():
             if var not in data.columns:
                 raise ValueError(f"Variable '{var}' not in data")
 
             for category, target in var_targets.items():
-                indicator = (data[var] == category).astype(float).values
-                constraints.append(indicator)
+                mask = data[var] == category
+                indices = np.where(mask)[0]
+                rows.extend([row_idx] * len(indices))
+                cols.extend(indices)
+                vals.extend([1.0] * len(indices))
                 targets.append(target)
                 names.append(f"{var}={category}")
                 self._n_categorical_constraints += 1
+                row_idx += 1
 
-        # Continuous constraints after categorical
+        # Continuous constraints - these are dense rows
+        continuous_rows = []
         if continuous_targets:
             for var, target in continuous_targets.items():
                 if var not in data.columns:
                     raise ValueError(f"Variable '{var}' not in data")
-                constraints.append(data[var].values.astype(float))
+                continuous_rows.append(data[var].values.astype(float))
                 targets.append(target)
                 names.append(var)
 
-        A = np.vstack(constraints) if constraints else np.zeros((0, len(data)))
         b = np.array(targets, dtype=float)
 
+        # Build sparse matrix for categorical, then convert or stack with continuous
+        n_cat = self._n_categorical_constraints
+        n_cont = len(continuous_rows)
+        n_constraints = n_cat + n_cont
+
+        if n_constraints == 0:
+            return np.zeros((0, n_records)), b, names
+
+        # Decide whether to use sparse based on density
+        # Categorical constraints are very sparse (1 entry per record per variable)
+        # If >100 categorical constraints, sparse is much more efficient
+        use_sparse = use_sparse and n_cat > 100
+
+        if use_sparse:
+            # Build sparse categorical matrix
+            A_cat_sparse = sparse.csr_matrix(
+                (vals, (rows, cols)), shape=(n_cat, n_records), dtype=float
+            )
+
+            if continuous_rows:
+                # Stack with dense continuous rows (converted to sparse)
+                A_cont = np.vstack(continuous_rows)
+                A_cont_sparse = sparse.csr_matrix(A_cont)
+                A_sparse = sparse.vstack([A_cat_sparse, A_cont_sparse])
+            else:
+                A_sparse = A_cat_sparse
+
+            # Store sparse matrix - caller must handle
+            self._constraint_matrix_sparse = A_sparse
+            # Return dense for compatibility, but flag that sparse is available
+            self._use_sparse_internally = True
+            # For now, convert to dense for backward compatibility
+            # TODO: Update callers to use sparse directly
+            A = A_sparse.toarray()
+        else:
+            # Build dense matrix (original behavior)
+            constraints = []
+            for var, var_targets in marginal_targets.items():
+                for category in var_targets.keys():
+                    indicator = (data[var] == category).astype(float).values
+                    constraints.append(indicator)
+            constraints.extend(continuous_rows)
+            A = np.vstack(constraints) if constraints else np.zeros((0, n_records))
+            self._use_sparse_internally = False
+
         return A, b, names
+
+    def _estimate_lipschitz(self, A: np.ndarray, n_iter: int = 20) -> float:
+        """Estimate largest eigenvalue of A.T @ A using power iteration.
+
+        This avoids forming the (n_records × n_records) matrix explicitly.
+        Memory: O(n_records) instead of O(n_records²)
+        """
+        from scipy import sparse
+
+        n_records = A.shape[1]
+        # Random initial vector
+        v = np.random.randn(n_records)
+        v = v / np.linalg.norm(v)
+
+        # Check if we have sparse matrix available
+        if hasattr(self, '_constraint_matrix_sparse') and self._use_sparse_internally:
+            A_sparse = self._constraint_matrix_sparse
+            for _ in range(n_iter):
+                # v = A.T @ (A @ v) without forming A.T @ A
+                Av = A_sparse @ v
+                v_new = A_sparse.T @ Av
+                norm = np.linalg.norm(v_new)
+                if norm < 1e-10:
+                    return 1.0
+                v = v_new / norm
+            # Eigenvalue estimate
+            Av = A_sparse @ v
+            return np.dot(Av, Av)
+        else:
+            for _ in range(n_iter):
+                # v = A.T @ (A @ v) without forming A.T @ A
+                Av = A @ v
+                v_new = A.T @ Av
+                norm = np.linalg.norm(v_new)
+                if norm < 1e-10:
+                    return 1.0
+                v = v_new / norm
+            # Eigenvalue estimate
+            Av = A @ v
+            return np.dot(Av, Av)
 
     def _fista(
         self,
@@ -1145,9 +1244,8 @@ class SparseCalibrator:
             A_norm = A
             b_norm = b
 
-        # Compute step size
-        AtA = A_norm.T @ A_norm
-        L = np.linalg.eigvalsh(AtA).max()
+        # Compute step size using power iteration (memory-efficient)
+        L = self._estimate_lipschitz(A_norm)
         step_size = 1.0 / max(L, 1e-10)
 
         w0 = np.ones(len(data))
