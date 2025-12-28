@@ -1,23 +1,12 @@
-"""Comprehensive comparison on INPUT variables only (not derived rules engine outputs).
+"""Expanded comparison with more variables (11 conditions, 6 targets).
 
-Target variables are survey-reported inputs that the rules engine uses:
-- employment_income (wage_income)
-- self_employment_income
-- social_security (ss_income)
-- unemployment_compensation (uc_income)
-- investment_income (interest + dividends)
+Target variables (survey-reported inputs):
+- wage_income, self_emp_income, ss_income, ssi_income, uc_income, investment_income
 
-NOT included (computed by rules engine):
-- SNAP benefits
-- EITC
-- AGI
-- Federal tax
-
-Baseline methods added:
-- Binning: Discretize conditions, sample from training data in each bin
-- Linear Regression + ZI: Two-stage linear model
-- Quantile Regression: Predict median with quantile loss
-- Statistical Matching: Nearest neighbor from donor pool
+Condition variables (11 total):
+- Demographics: age, is_female, education, marital_status, household_size, n_children
+- Geography: state_fips, region
+- Employment: is_employed, is_fulltime, is_self_employed
 """
 
 import sys
@@ -27,7 +16,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from scipy.spatial.distance import cdist
 from sklearn.linear_model import LinearRegression, LogisticRegression, QuantileRegressor
 from sklearn.preprocessing import StandardScaler
 
@@ -48,23 +36,32 @@ full_data = generate_cps_like_data(25000, seed=42)
 train_data = full_data.iloc[:20000].copy()
 test_data = full_data.iloc[20000:].copy()
 
-# INPUT variables only (survey-reported, used BY rules engine)
+# EXPANDED: 6 target variables (all survey-reported inputs)
 target_vars = [
     "wage_income",          # Employment income
     "self_emp_income",      # Self-employment income
     "ss_income",            # Social Security (reported)
-    "uc_income",            # Unemployment compensation (reported)
+    "ssi_income",           # SSI (reported)
+    "uc_income",            # Unemployment compensation
     "investment_income",    # Interest + dividends
 ]
 
-# Condition variables (demographics)
-condition_vars = ["age", "education", "is_employed", "marital_status"]
-all_vars = target_vars + condition_vars
+# EXPANDED: 11 condition variables
+condition_vars = [
+    # Demographics
+    "age", "is_female", "education", "marital_status",
+    "household_size", "n_children",
+    # Geography
+    "state_fips", "region",
+    # Employment
+    "is_employed", "is_fulltime", "is_self_employed",
+]
 
+all_vars = target_vars + condition_vars
 test_conditions = test_data[condition_vars].copy()
 
-print(f"\nTarget variables (inputs only): {target_vars}")
-print(f"Condition variables: {condition_vars}")
+print(f"\nTarget variables ({len(target_vars)}): {target_vars}")
+print(f"Condition variables ({len(condition_vars)}): {condition_vars}")
 
 # Check zero fractions
 print("\nZero fractions in training data:")
@@ -95,9 +92,9 @@ results = []
 
 
 # ==============================================================================
-# 1. MICROPLEX (tuned)
+# 1. MICROPLEX
 # ==============================================================================
-print("\n[1/9] microplex (tuned)...")
+print("\n[1/10] microplex (tuned)...")
 try:
     start = time.time()
     model = Synthesizer(
@@ -117,9 +114,9 @@ except Exception as e:
 
 
 # ==============================================================================
-# 2. QRF+ZI (tuned)
+# 2. QRF+ZI
 # ==============================================================================
-print("\n[2/9] QRF+ZI (tuned)...")
+print("\n[2/10] QRF+ZI (tuned)...")
 try:
     start = time.time()
     model = SequentialQRFWithZeroInflation(
@@ -138,9 +135,9 @@ except Exception as e:
 
 
 # ==============================================================================
-# 3. QRF (no ZI) - PolicyEngine approach
+# 3. QRF (no ZI) - PolicyEngine
 # ==============================================================================
-print("\n[3/9] QRF (no ZI, PolicyEngine)...")
+print("\n[3/10] QRF (no ZI, PolicyEngine)...")
 try:
     start = time.time()
     model = SequentialQRF(
@@ -159,26 +156,22 @@ except Exception as e:
 
 
 # ==============================================================================
-# 4. BINNING - Discretize conditions, sample from training within each bin
+# 4. BINNING
 # ==============================================================================
-print("\n[4/9] Binning (discretize + sample)...")
+print("\n[4/10] Binning (discretize + sample)...")
 try:
     start = time.time()
 
-    # Create bins for each condition variable
     binned_train = train_data.copy()
     binned_test = test_conditions.copy()
 
     for var in condition_vars:
-        if train_data[var].nunique() <= 5:
-            # Already categorical
+        if train_data[var].nunique() <= 10:
             binned_train[f"{var}_bin"] = train_data[var]
             binned_test[f"{var}_bin"] = test_conditions[var]
         else:
-            # Create quintile bins
             bins = pd.qcut(train_data[var], q=5, labels=False, duplicates='drop')
             binned_train[f"{var}_bin"] = bins
-            # Assign test to closest bin edges
             bin_edges = train_data.groupby(bins)[var].mean().values
             test_vals = test_conditions[var].values
             binned_test[f"{var}_bin"] = np.argmin(
@@ -187,23 +180,20 @@ try:
 
     bin_cols = [f"{v}_bin" for v in condition_vars]
 
-    # Sample from training data within each bin combination
     synthetic_rows = []
+    rng = np.random.default_rng(42)
     for _, row in binned_test.iterrows():
-        # Find matching bin in training data
         mask = np.ones(len(binned_train), dtype=bool)
         for col in bin_cols:
             mask &= (binned_train[col] == row[col])
 
         matches = train_data[mask]
         if len(matches) > 0:
-            # Random sample from matches
-            sampled = matches.sample(n=1, random_state=42).iloc[0]
-            synthetic_rows.append(sampled[target_vars].to_dict())
+            idx = rng.choice(len(matches))
+            synthetic_rows.append(matches.iloc[idx][target_vars].to_dict())
         else:
-            # Fallback: random sample from all training
-            sampled = train_data.sample(n=1, random_state=42).iloc[0]
-            synthetic_rows.append(sampled[target_vars].to_dict())
+            idx = rng.choice(len(train_data))
+            synthetic_rows.append(train_data.iloc[idx][target_vars].to_dict())
 
     synthetic = pd.DataFrame(synthetic_rows)
     synthetic[condition_vars] = test_conditions.values
@@ -221,7 +211,7 @@ except Exception as e:
 # ==============================================================================
 # 5. LINEAR REGRESSION + ZI
 # ==============================================================================
-print("\n[5/9] Linear Regression + ZI...")
+print("\n[5/10] Linear Regression + ZI...")
 try:
     start = time.time()
 
@@ -233,16 +223,14 @@ try:
         y_train = train_data[target].values
         X_test = synthetic_data[available_features].values
 
-        # Stage 1: Zero classifier
         y_binary = (y_train > 0).astype(int)
-        if y_binary.mean() > 0.01 and y_binary.mean() < 0.99:
+        if 0.01 < y_binary.mean() < 0.99:
             clf = LogisticRegression(max_iter=1000, random_state=42)
             clf.fit(X_train, y_binary)
             p_positive = clf.predict_proba(X_test)[:, 1]
         else:
             p_positive = np.full(len(X_test), y_binary.mean())
 
-        # Stage 2: Linear regression for positive values
         mask = y_train > 0
         predictions = np.zeros(len(X_test))
 
@@ -252,15 +240,12 @@ try:
             reg = LinearRegression()
             reg.fit(X_pos, y_train[mask])
             pred_positive = reg.predict(scaler.transform(X_test))
-
-            # Add noise proportional to residual std
             residual_std = np.std(y_train[mask] - reg.predict(X_pos))
             pred_positive += np.random.normal(0, residual_std * 0.5, len(pred_positive))
             pred_positive = np.maximum(pred_positive, 0)
         else:
             pred_positive = np.full(len(X_test), y_train[mask].mean() if mask.sum() > 0 else 0)
 
-        # Sample zeros
         is_positive = np.random.random(len(X_test)) < p_positive
         predictions[is_positive] = pred_positive[is_positive]
 
@@ -274,13 +259,12 @@ try:
     print(f"  ✓ MMD={res['mmd']:.4f}, Energy={res['energy_dist']:.4f}, Time={train_time:.1f}s")
 except Exception as e:
     print(f"  ✗ Failed: {e}")
-    import traceback; traceback.print_exc()
 
 
 # ==============================================================================
 # 6. QUANTILE REGRESSION + ZI
 # ==============================================================================
-print("\n[6/9] Quantile Regression + ZI...")
+print("\n[6/10] Quantile Regression + ZI...")
 try:
     start = time.time()
 
@@ -292,39 +276,30 @@ try:
         y_train = train_data[target].values
         X_test = synthetic_data[available_features].values
 
-        # Stage 1: Zero classifier
         y_binary = (y_train > 0).astype(int)
-        if y_binary.mean() > 0.01 and y_binary.mean() < 0.99:
+        if 0.01 < y_binary.mean() < 0.99:
             clf = LogisticRegression(max_iter=1000, random_state=42)
             clf.fit(X_train, y_binary)
             p_positive = clf.predict_proba(X_test)[:, 1]
         else:
             p_positive = np.full(len(X_test), y_binary.mean())
 
-        # Stage 2: Quantile regression for positive values
         mask = y_train > 0
         predictions = np.zeros(len(X_test))
 
         if mask.sum() > 50:
             scaler = StandardScaler()
             X_pos = scaler.fit_transform(X_train[mask])
-
-            # Sample random quantile for each prediction
-            quantiles = np.random.uniform(0.1, 0.9, len(X_test))
-
-            # Fit median model (faster than per-sample quantile)
             reg = QuantileRegressor(quantile=0.5, alpha=0.01, solver='highs')
             reg.fit(X_pos, y_train[mask])
             pred_median = reg.predict(scaler.transform(X_test))
-
-            # Add scaled noise to simulate quantile spread
             y_std = np.std(y_train[mask])
+            quantiles = np.random.uniform(0.1, 0.9, len(X_test))
             pred_positive = pred_median + (quantiles - 0.5) * y_std
             pred_positive = np.maximum(pred_positive, 0)
         else:
             pred_positive = np.full(len(X_test), y_train[mask].mean() if mask.sum() > 0 else 0)
 
-        # Sample zeros
         is_positive = np.random.random(len(X_test)) < p_positive
         predictions[is_positive] = pred_positive[is_positive]
 
@@ -338,19 +313,17 @@ try:
     print(f"  ✓ MMD={res['mmd']:.4f}, Energy={res['energy_dist']:.4f}, Time={train_time:.1f}s")
 except Exception as e:
     print(f"  ✗ Failed: {e}")
-    import traceback; traceback.print_exc()
 
 
 # ==============================================================================
-# 7. STATISTICAL MATCHING - py-statmatch NND.hotdeck
+# 7. NND.HOTDECK (py-statmatch)
 # ==============================================================================
-print("\n[7/9] StatMatch NND.hotdeck (py-statmatch)...")
+print("\n[7/10] NND.hotdeck (py-statmatch)...")
 try:
     from statmatch import nnd_hotdeck
 
     start = time.time()
 
-    # Normalize condition variables for better distance calculation
     scaler = StandardScaler()
     train_normalized = train_data.copy()
     test_normalized = test_conditions.copy()
@@ -361,7 +334,6 @@ try:
 
     norm_vars = [f"{v}_norm" for v in condition_vars]
 
-    # Use NND.hotdeck with euclidean distance
     result = nnd_hotdeck(
         data_rec=test_normalized.reset_index(drop=True),
         data_don=train_normalized.reset_index(drop=True),
@@ -369,7 +341,6 @@ try:
         dist_fun="euclidean",
     )
 
-    # Get matched records from training data
     matched_indices = result["noad.index"]
     synthetic = train_data.iloc[matched_indices][target_vars].copy().reset_index(drop=True)
     synthetic[condition_vars] = test_conditions.values
@@ -381,19 +352,15 @@ try:
     print(f"  ✓ MMD={res['mmd']:.4f}, Energy={res['energy_dist']:.4f}, Time={train_time:.1f}s")
 except Exception as e:
     print(f"  ✗ Failed: {e}")
-    import traceback; traceback.print_exc()
 
 
 # ==============================================================================
-# 7b. STATISTICAL MATCHING - Constrained (k=5)
+# 7b. NND.HOTDECK CONSTRAINED (k=5)
 # ==============================================================================
-print("\n[7b/9] StatMatch NND.hotdeck constrained (k=5)...")
+print("\n[7b/10] NND.hotdeck constrained (k=5)...")
 try:
-    from statmatch import nnd_hotdeck
-
     start = time.time()
 
-    # Use NND.hotdeck with constrained matching (each donor used at most 5 times)
     result = nnd_hotdeck(
         data_rec=test_normalized.reset_index(drop=True),
         data_don=train_normalized.reset_index(drop=True),
@@ -403,7 +370,6 @@ try:
         constr_alg="hungarian",
     )
 
-    # Get matched records from training data
     matched_indices = result["noad.index"]
     synthetic = train_data.iloc[matched_indices][target_vars].copy().reset_index(drop=True)
     synthetic[condition_vars] = test_conditions.values
@@ -415,13 +381,12 @@ try:
     print(f"  ✓ MMD={res['mmd']:.4f}, Energy={res['energy_dist']:.4f}, Time={train_time:.1f}s")
 except Exception as e:
     print(f"  ✗ Failed: {e}")
-    import traceback; traceback.print_exc()
 
 
 # ==============================================================================
 # 8. XGBoost + ZI
 # ==============================================================================
-print("\n[8/9] XGBoost + ZI...")
+print("\n[8/10] XGBoost + ZI...")
 try:
     import xgboost as xgb
 
@@ -435,13 +400,11 @@ try:
         y_train = train_data[target].values
         X_test = synthetic_data[available_features].values
 
-        # Zero classifier
         y_binary = (y_train > 0).astype(int)
         clf = LogisticRegression(max_iter=1000, random_state=42)
         clf.fit(X_train, y_binary)
         p_positive = clf.predict_proba(X_test)[:, 1]
 
-        # Regressor for positive values
         mask = y_train > 0
         if mask.sum() > 10:
             reg = xgb.XGBRegressor(n_estimators=100, max_depth=6, verbosity=0, random_state=42)
@@ -450,7 +413,6 @@ try:
         else:
             pred_positive = np.full(len(X_test), y_train[mask].mean() if mask.sum() > 0 else 0)
 
-        # Sample zeros
         is_positive = np.random.random(len(X_test)) < p_positive
         predictions = np.where(is_positive, np.maximum(pred_positive, 0), 0)
 
@@ -469,7 +431,7 @@ except Exception as e:
 # ==============================================================================
 # 9. CT-GAN
 # ==============================================================================
-print("\n[9/9] CT-GAN...")
+print("\n[9/10] CT-GAN...")
 try:
     from sdv.single_table import CTGANSynthesizer
     from sdv.metadata import SingleTableMetadata
@@ -494,13 +456,40 @@ except Exception as e:
 
 
 # ==============================================================================
+# 10. TVAE
+# ==============================================================================
+print("\n[10/10] TVAE...")
+try:
+    from sdv.single_table import TVAESynthesizer
+    from sdv.metadata import SingleTableMetadata
+
+    start = time.time()
+
+    metadata = SingleTableMetadata()
+    metadata.detect_from_dataframe(train_data[all_vars])
+
+    model = TVAESynthesizer(metadata, epochs=50, verbose=False)
+    model.fit(train_data[all_vars])
+
+    synthetic = model.sample(len(test_conditions))
+    train_time = time.time() - start
+
+    res = evaluate(synthetic, "TVAE")
+    res["time"] = train_time
+    results.append(res)
+    print(f"  ✓ MMD={res['mmd']:.4f}, Energy={res['energy_dist']:.4f}, Time={train_time:.1f}s")
+except Exception as e:
+    print(f"  ✗ Failed: {e}")
+
+
+# ==============================================================================
 # SUMMARY
 # ==============================================================================
 print("\n" + "=" * 90)
-print("INPUT VARIABLES COMPARISON RESULTS")
+print("EXPANDED VARIABLE COMPARISON RESULTS")
 print("=" * 90)
-print(f"\nTarget variables: {target_vars}")
-print(f"(These are survey INPUTS - not derived from rules engine)")
+print(f"\nTarget variables ({len(target_vars)}): {target_vars}")
+print(f"Condition variables ({len(condition_vars)}): {condition_vars}")
 
 df = pd.DataFrame(results)
 df = df.sort_values("mmd")
@@ -521,6 +510,6 @@ print(f"Best Coverage:              {df.loc[df['coverage'].idxmin(), 'method']}"
 print(f"Fastest:                    {df.loc[df['time'].idxmin(), 'method']}")
 
 # Save results
-output_path = Path(__file__).parent / "results" / "input_var_comparison.csv"
+output_path = Path(__file__).parent / "results" / "expanded_var_comparison.csv"
 df.to_csv(output_path, index=False)
 print(f"\nResults saved to: {output_path}")
