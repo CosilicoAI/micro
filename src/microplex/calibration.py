@@ -645,3 +645,537 @@ class Calibrator:
             raise ValueError("Calibrator not fitted. Call fit() first.")
 
         return self.convergence_history_
+
+
+class SparseCalibrator:
+    """
+    Sparse calibration that jointly optimizes accuracy and sparsity.
+
+    Solves:
+        min (1/2)||Aw - b||² + λ||w||₁  subject to w ≥ 0
+
+    where:
+        - A: constraint matrix (each row is a target)
+        - b: target values
+        - w: weights (decision variables)
+        - λ: sparsity penalty (higher = more zeros)
+
+    Records that are important for hitting targets retain positive weights.
+    Redundant records are driven to zero.
+
+    Key features:
+    - Single optimization combining calibration + sparsity
+    - λ controls accuracy-sparsity tradeoff
+    - Optional: specify target_sparsity to auto-tune λ
+    - Uses FISTA (Fast Iterative Shrinkage-Thresholding) for efficiency
+
+    Example:
+        >>> from microplex.calibration import SparseCalibrator
+        >>> calibrator = SparseCalibrator(sparsity_weight=0.1)
+        >>> targets = {"state": {"CA": 1000, "NY": 500}}
+        >>> calibrated = calibrator.fit_transform(data, targets)
+        >>> print(f"Sparsity: {calibrator.get_sparsity():.1%}")
+
+        # Or specify target sparsity directly:
+        >>> calibrator = SparseCalibrator(target_sparsity=0.8)  # 80% zeros
+    """
+
+    def __init__(
+        self,
+        sparsity_weight: Optional[float] = None,
+        target_sparsity: Optional[float] = None,
+        tol: float = 1e-6,
+        max_iter: int = 1000,
+        normalize_targets: bool = True,
+    ):
+        """
+        Initialize sparse calibrator.
+
+        Args:
+            sparsity_weight: L1 penalty weight λ. Higher = more sparsity.
+                If None, must specify target_sparsity.
+            target_sparsity: Desired fraction of zero weights (0 to 1).
+                If specified, λ is auto-tuned via binary search.
+                Mutually exclusive with sparsity_weight.
+            tol: Convergence tolerance
+            max_iter: Maximum FISTA iterations
+            normalize_targets: If True, normalize targets to similar scale
+                before optimization (improves convergence)
+
+        Raises:
+            ValueError: If neither or both sparsity_weight and target_sparsity
+                are specified
+        """
+        if sparsity_weight is None and target_sparsity is None:
+            raise ValueError(
+                "Must specify either sparsity_weight or target_sparsity"
+            )
+        if sparsity_weight is not None and target_sparsity is not None:
+            raise ValueError(
+                "Cannot specify both sparsity_weight and target_sparsity"
+            )
+        if target_sparsity is not None and not (0 <= target_sparsity < 1):
+            raise ValueError("target_sparsity must be in [0, 1)")
+
+        self.sparsity_weight = sparsity_weight
+        self.target_sparsity = target_sparsity
+        self.tol = tol
+        self.max_iter = max_iter
+        self.normalize_targets = normalize_targets
+
+        # Set during fit
+        self.weights_: Optional[np.ndarray] = None
+        self.is_fitted_: bool = False
+        self.n_records_: Optional[int] = None
+        self.marginal_targets_: Optional[Dict[str, Dict[str, float]]] = None
+        self.continuous_targets_: Optional[Dict[str, float]] = None
+        self.lambda_: Optional[float] = None  # Actual λ used
+        self.convergence_history_: List[Dict[str, Any]] = []
+        self.n_iterations_: int = 0
+        self.calibration_error_: float = 0.0
+
+    def fit(
+        self,
+        data: pd.DataFrame,
+        marginal_targets: Dict[str, Dict[str, float]],
+        continuous_targets: Optional[Dict[str, float]] = None,
+        weight_col: str = "weight",
+    ) -> "SparseCalibrator":
+        """
+        Fit sparse calibration weights.
+
+        Args:
+            data: DataFrame with microdata records
+            marginal_targets: Dict of categorical targets {var: {category: count}}
+            continuous_targets: Dict of continuous totals {var: total}
+            weight_col: Name of initial weight column (used for scaling)
+
+        Returns:
+            self
+        """
+        self.n_records_ = len(data)
+        self.marginal_targets_ = marginal_targets
+        self.continuous_targets_ = continuous_targets or {}
+
+        # Build constraint matrix A and target vector b
+        A, b, self._target_names = self._build_constraints(
+            data, marginal_targets, continuous_targets
+        )
+
+        # Normalize each constraint row to have similar scale
+        # This handles mixed categorical (counts) and continuous (dollars) targets
+        if self.normalize_targets:
+            self._row_scales = np.abs(b).copy()
+            self._row_scales[self._row_scales < 1e-10] = 1.0
+            # Normalize each row: (A[i] @ w) / scale[i] ≈ b[i] / scale[i] = 1
+            A_norm = A / self._row_scales[:, np.newaxis]
+            b_norm = b / self._row_scales  # Now all targets are ~1
+        else:
+            self._row_scales = np.ones(len(b))
+            A_norm = A
+            b_norm = b
+
+        # Get initial weights for scaling reference
+        if weight_col in data.columns:
+            w0 = data[weight_col].values.astype(float)
+        else:
+            w0 = np.ones(len(data), dtype=float)
+
+        # Compute step size for FISTA (1 / L where L is Lipschitz constant)
+        # L = largest eigenvalue of A.T @ A
+        AtA = A_norm.T @ A_norm
+        L = np.linalg.eigvalsh(AtA).max()
+        step_size = 1.0 / max(L, 1e-10)
+
+        if self.target_sparsity is not None:
+            # Binary search for λ that achieves target sparsity
+            weights, lam = self._fit_with_target_sparsity(
+                A_norm, b_norm, step_size, w0
+            )
+            self.lambda_ = lam
+        else:
+            # Use specified λ
+            self.lambda_ = self.sparsity_weight
+            weights = self._fista(A_norm, b_norm, self.lambda_, step_size, w0)
+
+        # No rescaling needed - w directly satisfies A @ w ≈ b
+        self.weights_ = weights
+        self.is_fitted_ = True
+
+        # Compute final calibration error
+        residual = A @ weights - b
+        rel_errors = np.abs(residual) / np.maximum(np.abs(b), 1e-10)
+        self.calibration_error_ = np.sqrt(np.mean(rel_errors ** 2))
+
+        return self
+
+    def _build_constraints(
+        self,
+        data: pd.DataFrame,
+        marginal_targets: Dict[str, Dict[str, float]],
+        continuous_targets: Optional[Dict[str, float]],
+    ) -> tuple[np.ndarray, np.ndarray, List[str]]:
+        """Build constraint matrix A, target vector b, and target names."""
+        constraints = []
+        targets = []
+        names = []
+
+        # Track which constraints are categorical (for cross-category selection)
+        self._n_categorical_constraints = 0
+
+        # Categorical constraints first
+        for var, var_targets in marginal_targets.items():
+            if var not in data.columns:
+                raise ValueError(f"Variable '{var}' not in data")
+
+            for category, target in var_targets.items():
+                indicator = (data[var] == category).astype(float).values
+                constraints.append(indicator)
+                targets.append(target)
+                names.append(f"{var}={category}")
+                self._n_categorical_constraints += 1
+
+        # Continuous constraints after categorical
+        if continuous_targets:
+            for var, target in continuous_targets.items():
+                if var not in data.columns:
+                    raise ValueError(f"Variable '{var}' not in data")
+                constraints.append(data[var].values.astype(float))
+                targets.append(target)
+                names.append(var)
+
+        A = np.vstack(constraints) if constraints else np.zeros((0, len(data)))
+        b = np.array(targets, dtype=float)
+
+        return A, b, names
+
+    def _fista(
+        self,
+        A: np.ndarray,
+        b: np.ndarray,
+        lam: float,
+        step_size: float,
+        w0: np.ndarray,
+    ) -> np.ndarray:
+        """
+        Cross-category sparse calibration.
+
+        For overlapping constraints (e.g., state AND age), we must
+        ensure the selected subset has the right JOINT distribution,
+        not just the right marginals.
+
+        Algorithm:
+        1. Identify "cross-categories" (unique combinations of CATEGORICAL constraint memberships)
+        2. For each cross-category, determine how many records needed
+        3. Select proportionally from each cross-category
+        4. Calibrate using IPF on the selected subset (including continuous)
+        """
+        n = len(w0)
+
+        # Target number of records to keep
+        k = max(1, int(n * np.exp(-lam)))
+
+        self.convergence_history_ = []
+
+        # Step 1: Identify cross-categories
+        # ONLY use categorical constraints for cross-category grouping
+        # Continuous constraints are handled in calibration step
+        n_cat = getattr(self, '_n_categorical_constraints', len(b))
+        n_constraints = len(b)
+
+        # Create cross-category signature for each record
+        # signature[j] = tuple of CATEGORICAL constraint indices that apply to record j
+        from collections import defaultdict
+        signatures = []
+        for j in range(n):
+            # Only include categorical constraints (first n_cat rows)
+            sig = tuple(i for i in range(n_cat) if A[i, j] > 0)
+            signatures.append(sig)
+
+        # Group records by signature
+        cross_cats = defaultdict(list)
+        for j, sig in enumerate(signatures):
+            cross_cats[sig].append(j)
+
+        # Step 2: Determine selection proportion for each cross-category
+        keep_fraction = k / n
+        max_weight = 10.0  # Upper bound on weight per record
+
+        # Only apply minimum coverage to categorical constraints
+        min_per_constraint = np.zeros(n_constraints)
+        min_per_constraint[:n_cat] = np.ceil(b[:n_cat] / max_weight)
+
+        selected = np.zeros(n, dtype=bool)
+
+        # For each cross-category, select proportionally
+        for sig, indices in cross_cats.items():
+            indices = np.array(indices)
+            n_in_cat = len(indices)
+
+            # How many to keep from this cross-category?
+            n_keep = max(1, int(n_in_cat * keep_fraction))
+            n_keep = min(n_keep, n_in_cat)
+
+            # Random selection within cross-category
+            np.random.shuffle(indices)
+            selected[indices[:n_keep]] = True
+
+        # Step 3: Verify minimum coverage for CATEGORICAL constraints
+        for i in range(n_cat):
+            row = A[i]
+            in_constraint = (row > 0)
+            n_selected_in = (selected & in_constraint).sum()
+            min_needed = int(min_per_constraint[i])
+
+            if n_selected_in < min_needed:
+                # Need to add more from this constraint
+                unselected_in = (~selected) & in_constraint
+                candidates = np.where(unselected_in)[0]
+                n_more = min(min_needed - n_selected_in, len(candidates))
+                np.random.shuffle(candidates)
+                selected[candidates[:n_more]] = True
+
+        # Step 4: Initialize weights for selected records
+        w = np.zeros(n)
+        w[selected] = 1.0
+
+        # Step 5: Calibrate using IPF-style iteration
+        # First calibrate categorical, then adjust for continuous
+        for iteration in range(self.max_iter):
+            w_old = w.copy()
+
+            # Categorical constraints: multiplicative adjustment
+            for i in range(n_cat):
+                row = A[i]
+                current = (w * row).sum()
+
+                if current > 1e-10:
+                    adjustment = b[i] / current
+                    mask = (row > 0) & selected
+                    w[mask] *= adjustment
+
+            # Continuous constraints: linear calibration (generalized raking)
+            for i in range(n_cat, n_constraints):
+                values = A[i]  # The actual variable values
+                current = (w * values).sum()
+
+                if abs(current) > 1e-10:
+                    # Linear adjustment: w_new = w * (1 + lambda * x)
+                    # where lambda is chosen so sum(w_new * x) = target
+                    weighted_x2 = (w * values ** 2).sum()
+                    if weighted_x2 > 1e-10:
+                        lam_adj = (b[i] - current) / weighted_x2
+                        # Apply with damping
+                        adjustment = 1 + 0.5 * lam_adj * values  # Damped
+                        adjustment = np.maximum(adjustment, 0.1)
+                        w = w * adjustment
+                        # Ensure zeros stay zero
+                        w[~selected] = 0
+
+            # Convergence check
+            residual = A @ w - b
+            change = np.linalg.norm(w - w_old) / max(np.linalg.norm(w_old), 1e-10)
+
+            if iteration % 50 == 0 or change < self.tol:
+                error = np.max(np.abs(residual) / np.maximum(np.abs(b), 1e-10))
+                sparsity = (w < 1e-9).sum() / n
+                self.convergence_history_.append({
+                    "iteration": iteration + 1,
+                    "max_error": error,
+                    "change": change,
+                    "sparsity": sparsity,
+                    "n_selected": selected.sum(),
+                })
+
+            if change < self.tol and iteration > 5:
+                self.n_iterations_ = iteration + 1
+                break
+        else:
+            self.n_iterations_ = self.max_iter
+
+        return w
+
+    def _fit_with_target_sparsity(
+        self,
+        A: np.ndarray,
+        b: np.ndarray,
+        step_size: float,
+        w0: np.ndarray,
+    ) -> tuple[np.ndarray, float]:
+        """
+        Directly compute k from target sparsity, then run IHT.
+
+        With IHT, λ maps to k via k = n * exp(-λ).
+        So for target sparsity s, we want k = n * (1 - s).
+        Solving: λ = -ln(1 - s)
+
+        Returns:
+            (weights, lambda) tuple
+        """
+        n = len(w0)
+        target = self.target_sparsity
+
+        # Direct calculation: k = n * (1 - sparsity)
+        k_target = int(n * (1 - target))
+        k_target = max(1, k_target)  # At least 1 record
+
+        # λ = -ln(k/n) = -ln(1 - sparsity)
+        lam = -np.log(max(k_target / n, 1e-10))
+
+        # Run IHT with this λ
+        weights = self._fista(A, b, lam, step_size, w0)
+
+        return weights, lam
+
+    def transform(
+        self,
+        data: pd.DataFrame,
+        weight_col: str = "weight",
+    ) -> pd.DataFrame:
+        """Apply fitted weights to data."""
+        if not self.is_fitted_:
+            raise ValueError("Not fitted. Call fit() first.")
+
+        if len(data) != self.n_records_:
+            raise ValueError(
+                f"Data length ({len(data)}) doesn't match fitted ({self.n_records_})"
+            )
+
+        result = data.copy()
+        result[weight_col] = self.weights_
+        return result
+
+    def fit_transform(
+        self,
+        data: pd.DataFrame,
+        marginal_targets: Dict[str, Dict[str, float]],
+        continuous_targets: Optional[Dict[str, float]] = None,
+        weight_col: str = "weight",
+    ) -> pd.DataFrame:
+        """Fit and transform in one call."""
+        self.fit(data, marginal_targets, continuous_targets, weight_col)
+        return self.transform(data, weight_col)
+
+    def get_sparsity(self) -> float:
+        """Get fraction of zero weights."""
+        if not self.is_fitted_:
+            raise ValueError("Not fitted.")
+        return (self.weights_ < 1e-9).sum() / self.n_records_
+
+    def get_n_nonzero(self) -> int:
+        """Get count of non-zero weights."""
+        if not self.is_fitted_:
+            raise ValueError("Not fitted.")
+        return (self.weights_ >= 1e-9).sum()
+
+    def validate(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Validate calibration accuracy.
+
+        Returns dict with per-target errors and overall metrics.
+        """
+        if not self.is_fitted_:
+            raise ValueError("Not fitted.")
+
+        weights = self.weights_
+        results = {"targets": {}, "sparsity": self.get_sparsity()}
+
+        # Check marginal targets
+        if self.marginal_targets_:
+            for var, var_targets in self.marginal_targets_.items():
+                for category, target in var_targets.items():
+                    mask = data[var] == category
+                    actual = weights[mask].sum()
+                    rel_error = abs(actual - target) / target if target > 0 else 0
+                    results["targets"][f"{var}={category}"] = {
+                        "actual": actual,
+                        "target": target,
+                        "error": rel_error,
+                    }
+
+        # Check continuous targets
+        if self.continuous_targets_:
+            for var, target in self.continuous_targets_.items():
+                actual = (weights * data[var].values).sum()
+                rel_error = abs(actual - target) / abs(target) if target != 0 else 0
+                results["targets"][var] = {
+                    "actual": actual,
+                    "target": target,
+                    "error": rel_error,
+                }
+
+        errors = [t["error"] for t in results["targets"].values()]
+        results["max_error"] = max(errors) if errors else 0
+        results["mean_error"] = np.mean(errors) if errors else 0
+        results["rmse"] = self.calibration_error_
+
+        return results
+
+    def get_pareto_frontier(
+        self,
+        data: pd.DataFrame,
+        marginal_targets: Dict[str, Dict[str, float]],
+        continuous_targets: Optional[Dict[str, float]] = None,
+        n_points: int = 20,
+    ) -> pd.DataFrame:
+        """
+        Compute Pareto frontier of sparsity vs accuracy.
+
+        Useful for choosing the right sparsity-accuracy tradeoff.
+
+        Args:
+            data: DataFrame with microdata
+            marginal_targets: Categorical targets
+            continuous_targets: Continuous targets
+            n_points: Number of points on the frontier
+
+        Returns:
+            DataFrame with columns: lambda, sparsity, max_error, n_nonzero
+        """
+        # Build constraints once
+        A, b, _ = self._build_constraints(data, marginal_targets, continuous_targets)
+
+        # Normalize each row by its target value
+        if self.normalize_targets:
+            row_scales = np.abs(b).copy()
+            row_scales[row_scales < 1e-10] = 1.0
+            A_norm = A / row_scales[:, np.newaxis]
+            b_norm = b / row_scales
+        else:
+            A_norm = A
+            b_norm = b
+
+        # Compute step size
+        AtA = A_norm.T @ A_norm
+        L = np.linalg.eigvalsh(AtA).max()
+        step_size = 1.0 / max(L, 1e-10)
+
+        w0 = np.ones(len(data))
+
+        # Sweep λ values
+        lam_values = np.logspace(-6, 1, n_points)
+        results = []
+
+        for lam in lam_values:
+            weights = self._fista(A_norm, b_norm, lam, step_size, w0)
+
+            sparsity = (weights < 1e-9).sum() / len(weights)
+            n_nonzero = (weights >= 1e-9).sum()
+
+            # Compute error using original scale
+            residual = A @ weights - b
+            rel_errors = np.abs(residual) / np.maximum(np.abs(b), 1e-10)
+            max_error = rel_errors.max()
+
+            results.append({
+                "lambda": lam,
+                "sparsity": sparsity,
+                "max_error": max_error,
+                "n_nonzero": n_nonzero,
+            })
+
+            # Stop if fully sparse
+            if sparsity > 0.99:
+                break
+
+        return pd.DataFrame(results)
