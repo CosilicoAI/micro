@@ -1446,35 +1446,69 @@ class HardConcreteCalibrator:
         marginal_targets: Dict[str, Dict[str, float]],
         continuous_targets: Optional[Dict[str, float]],
     ) -> tuple[np.ndarray, np.ndarray, List[str]]:
-        """Build constraint matrix A, target vector b, and target names."""
-        constraints = []
+        """Build constraint matrix A, target vector b, and target names.
+
+        Uses sparse construction for memory efficiency with many categorical targets.
+        """
+        from scipy import sparse
+
+        n_records = len(data)
+        rows = []
+        cols = []
+        vals = []
         targets = []
         names = []
+        row_idx = 0
 
-        # Categorical constraints
+        # Categorical constraints - build as sparse
         for var, var_targets in marginal_targets.items():
             if var not in data.columns:
                 raise ValueError(f"Variable '{var}' not in data")
 
             for category, target in var_targets.items():
-                indicator = (data[var] == category).astype(float).values
-                constraints.append(indicator)
+                mask = data[var] == category
+                indices = np.where(mask)[0]
+                rows.extend([row_idx] * len(indices))
+                cols.extend(indices)
+                vals.extend([1.0] * len(indices))
                 targets.append(target)
                 names.append(f"{var}={category}")
+                row_idx += 1
 
-        # Continuous constraints
+        # Continuous constraints - these are dense rows
+        continuous_rows = []
         if continuous_targets:
             for var, target in continuous_targets.items():
                 if var not in data.columns:
                     raise ValueError(f"Variable '{var}' not in data")
-                constraints.append(data[var].values.astype(float))
+                continuous_rows.append(data[var].values.astype(float))
                 targets.append(target)
                 names.append(var)
 
-        A = np.vstack(constraints) if constraints else np.zeros((0, len(data)))
         b = np.array(targets, dtype=float)
+        n_cat = row_idx
+        n_cont = len(continuous_rows)
+        n_constraints = n_cat + n_cont
 
-        return A, b, names
+        if n_constraints == 0:
+            return np.zeros((0, n_records)), b, names
+
+        # Build sparse matrix for categorical constraints
+        A_cat_sparse = sparse.csr_matrix(
+            (vals, (rows, cols)), shape=(n_cat, n_records), dtype=float
+        )
+
+        if continuous_rows:
+            # Stack with dense continuous rows
+            A_cont = np.vstack(continuous_rows)
+            A_cont_sparse = sparse.csr_matrix(A_cont)
+            A_sparse = sparse.vstack([A_cat_sparse, A_cont_sparse])
+        else:
+            A_sparse = A_cat_sparse
+
+        # Return as dense for backward compatibility
+        # The L0 package will convert back to sparse internally
+        return A_sparse.toarray(), b, names
 
     def transform(
         self,
