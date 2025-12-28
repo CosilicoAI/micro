@@ -1179,3 +1179,280 @@ class SparseCalibrator:
                 break
 
         return pd.DataFrame(results)
+
+
+class HardConcreteCalibrator:
+    """
+    L0-regularized calibration using Hard Concrete distribution.
+
+    Uses gradient descent with differentiable L0 penalty (Hard Concrete gates)
+    to jointly optimize calibration accuracy and sparsity. Unlike SparseCalibrator
+    which uses deterministic cross-category selection, this approach learns which
+    records are important for hitting targets.
+
+    Based on Louizos, Welling & Kingma (2017) "Learning Sparse Neural Networks
+    through L0 Regularization".
+
+    Key features:
+    - End-to-end differentiable sparsity
+    - Automatic tradeoff between accuracy and sparsity
+    - Handles both categorical and continuous targets uniformly
+    - Learns which records matter for calibration
+
+    Example:
+        >>> from microplex.calibration import HardConcreteCalibrator
+        >>> calibrator = HardConcreteCalibrator(lambda_l0=1e-5)
+        >>> targets = {"state": {"CA": 1000, "NY": 500}}
+        >>> calibrated = calibrator.fit_transform(data, targets)
+        >>> print(f"Sparsity: {calibrator.get_sparsity():.1%}")
+    """
+
+    def __init__(
+        self,
+        lambda_l0: float = 1e-5,
+        lambda_l2: float = 0.0,
+        lr: float = 0.1,
+        epochs: int = 2000,
+        init_keep_prob: float = 0.99,
+        loss_type: str = "relative",
+        normalize_targets: bool = True,
+        verbose: bool = False,
+        verbose_freq: int = 200,
+        device: str = "cpu",
+    ):
+        """
+        Initialize Hard Concrete calibrator.
+
+        Args:
+            lambda_l0: L0 penalty strength. Higher = more sparsity.
+                Typical range: 1e-7 to 1e-4
+            lambda_l2: L2 penalty on weight magnitudes. Prevents explosion.
+            lr: Learning rate for Adam optimizer.
+            epochs: Number of optimization epochs.
+            init_keep_prob: Initial probability of keeping each weight.
+                Start high (0.99) and let optimizer prune.
+            loss_type: "relative" for scale-invariant loss, "mse" for absolute.
+            normalize_targets: Normalize targets to similar scale before fitting.
+            verbose: Print progress during fitting.
+            verbose_freq: Print every N epochs.
+            device: "cpu" or "cuda" for GPU acceleration.
+        """
+        self.lambda_l0 = lambda_l0
+        self.lambda_l2 = lambda_l2
+        self.lr = lr
+        self.epochs = epochs
+        self.init_keep_prob = init_keep_prob
+        self.loss_type = loss_type
+        self.normalize_targets = normalize_targets
+        self.verbose = verbose
+        self.verbose_freq = verbose_freq
+        self.device = device
+
+        # Set during fit
+        self.model_: Optional[Any] = None
+        self.weights_: Optional[np.ndarray] = None
+        self.is_fitted_: bool = False
+        self.n_records_: Optional[int] = None
+        self.marginal_targets_: Optional[Dict[str, Dict[str, float]]] = None
+        self.continuous_targets_: Optional[Dict[str, float]] = None
+
+    def fit(
+        self,
+        data: pd.DataFrame,
+        marginal_targets: Dict[str, Dict[str, float]],
+        continuous_targets: Optional[Dict[str, float]] = None,
+        weight_col: str = "weight",
+    ) -> "HardConcreteCalibrator":
+        """
+        Fit Hard Concrete calibration weights.
+
+        Args:
+            data: DataFrame with microdata records
+            marginal_targets: Dict of categorical targets {var: {category: count}}
+            continuous_targets: Dict of continuous totals {var: total}
+            weight_col: Name of initial weight column (for initialization)
+
+        Returns:
+            self
+        """
+        try:
+            from l0.calibration import SparseCalibrationWeights
+        except ImportError:
+            raise ImportError(
+                "l0 package required for HardConcreteCalibrator. "
+                "Install with: pip install l0"
+            )
+
+        from scipy import sparse as sp
+
+        self.n_records_ = len(data)
+        self.marginal_targets_ = marginal_targets
+        self.continuous_targets_ = continuous_targets or {}
+
+        # Build constraint matrix and targets
+        A, b, target_names = self._build_constraints(
+            data, marginal_targets, continuous_targets
+        )
+
+        # Normalize targets for better optimization
+        if self.normalize_targets:
+            self._row_scales = np.abs(b).copy()
+            self._row_scales[self._row_scales < 1e-10] = 1.0
+            b_norm = b / self._row_scales
+            A_norm = A / self._row_scales[:, np.newaxis]
+        else:
+            self._row_scales = np.ones(len(b))
+            A_norm = A
+            b_norm = b
+
+        # Convert to sparse matrix
+        A_sparse = sp.csr_matrix(A_norm)
+
+        # Get initial weights
+        if weight_col in data.columns:
+            init_weights = data[weight_col].values.astype(float)
+        else:
+            init_weights = np.ones(len(data))
+
+        # Create and fit model
+        self.model_ = SparseCalibrationWeights(
+            n_features=len(data),
+            init_keep_prob=self.init_keep_prob,
+            init_weights=init_weights,
+            device=self.device,
+        )
+
+        self.model_.fit(
+            M=A_sparse,
+            y=b_norm,
+            lambda_l0=self.lambda_l0,
+            lambda_l2=self.lambda_l2,
+            lr=self.lr,
+            epochs=self.epochs,
+            loss_type=self.loss_type,
+            verbose=self.verbose,
+            verbose_freq=self.verbose_freq,
+        )
+
+        # Extract final weights
+        import torch
+        with torch.no_grad():
+            self.weights_ = self.model_.get_weights(deterministic=True).cpu().numpy()
+
+        self.is_fitted_ = True
+        return self
+
+    def _build_constraints(
+        self,
+        data: pd.DataFrame,
+        marginal_targets: Dict[str, Dict[str, float]],
+        continuous_targets: Optional[Dict[str, float]],
+    ) -> tuple[np.ndarray, np.ndarray, List[str]]:
+        """Build constraint matrix A, target vector b, and target names."""
+        constraints = []
+        targets = []
+        names = []
+
+        # Categorical constraints
+        for var, var_targets in marginal_targets.items():
+            if var not in data.columns:
+                raise ValueError(f"Variable '{var}' not in data")
+
+            for category, target in var_targets.items():
+                indicator = (data[var] == category).astype(float).values
+                constraints.append(indicator)
+                targets.append(target)
+                names.append(f"{var}={category}")
+
+        # Continuous constraints
+        if continuous_targets:
+            for var, target in continuous_targets.items():
+                if var not in data.columns:
+                    raise ValueError(f"Variable '{var}' not in data")
+                constraints.append(data[var].values.astype(float))
+                targets.append(target)
+                names.append(var)
+
+        A = np.vstack(constraints) if constraints else np.zeros((0, len(data)))
+        b = np.array(targets, dtype=float)
+
+        return A, b, names
+
+    def transform(
+        self,
+        data: pd.DataFrame,
+        weight_col: str = "weight",
+    ) -> pd.DataFrame:
+        """Apply fitted weights to data."""
+        if not self.is_fitted_:
+            raise ValueError("Not fitted. Call fit() first.")
+
+        if len(data) != self.n_records_:
+            raise ValueError(
+                f"Data length ({len(data)}) doesn't match fitted ({self.n_records_})"
+            )
+
+        result = data.copy()
+        result[weight_col] = self.weights_
+        return result
+
+    def fit_transform(
+        self,
+        data: pd.DataFrame,
+        marginal_targets: Dict[str, Dict[str, float]],
+        continuous_targets: Optional[Dict[str, float]] = None,
+        weight_col: str = "weight",
+    ) -> pd.DataFrame:
+        """Fit and transform in one call."""
+        self.fit(data, marginal_targets, continuous_targets, weight_col)
+        return self.transform(data, weight_col)
+
+    def get_sparsity(self) -> float:
+        """Get fraction of zero weights."""
+        if not self.is_fitted_:
+            raise ValueError("Not fitted.")
+        return (self.weights_ < 1e-9).sum() / self.n_records_
+
+    def get_n_nonzero(self) -> int:
+        """Get count of non-zero weights."""
+        if not self.is_fitted_:
+            raise ValueError("Not fitted.")
+        return int((self.weights_ >= 1e-9).sum())
+
+    def validate(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Validate calibration accuracy."""
+        if not self.is_fitted_:
+            raise ValueError("Not fitted.")
+
+        weights = self.weights_
+        results = {"targets": {}, "sparsity": self.get_sparsity()}
+
+        # Check marginal targets
+        if self.marginal_targets_:
+            for var, var_targets in self.marginal_targets_.items():
+                for category, target in var_targets.items():
+                    mask = data[var] == category
+                    actual = weights[mask].sum()
+                    rel_error = abs(actual - target) / target if target > 0 else 0
+                    results["targets"][f"{var}={category}"] = {
+                        "actual": actual,
+                        "target": target,
+                        "error": rel_error,
+                    }
+
+        # Check continuous targets
+        if self.continuous_targets_:
+            for var, target in self.continuous_targets_.items():
+                actual = (weights * data[var].values).sum()
+                rel_error = abs(actual - target) / abs(target) if target != 0 else 0
+                results["targets"][var] = {
+                    "actual": actual,
+                    "target": target,
+                    "error": rel_error,
+                }
+
+        errors = [t["error"] for t in results["targets"].values()]
+        results["max_error"] = max(errors) if errors else 0
+        results["mean_error"] = np.mean(errors) if errors else 0
+
+        return results
