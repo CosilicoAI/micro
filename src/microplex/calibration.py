@@ -1377,8 +1377,9 @@ class HardConcreteCalibrator:
             from l0.calibration import SparseCalibrationWeights
         except ImportError:
             raise ImportError(
-                "l0 package required for HardConcreteCalibrator. "
-                "Install with: pip install l0"
+                "l0-python package required for HardConcreteCalibrator. "
+                "Install with: pip install microplex[l0] or pip install l0-python. "
+                "Requires Python 3.11+."
             )
 
         from scipy import sparse as sp

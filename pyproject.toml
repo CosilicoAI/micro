@@ -49,6 +49,9 @@ dev = [
 statmatch = [
     "py-statmatch>=0.1.0",  # Statistical matching backend
 ]
+l0 = [
+    "l0-python>=0.4",  # PolicyEngine L0 regularization (requires Python 3.11+)
+]
 benchmark = [
     "sdv>=1.0",  # CT-GAN, TVAE, Copulas
     "scikit-learn>=1.3",  # For QRF comparison
