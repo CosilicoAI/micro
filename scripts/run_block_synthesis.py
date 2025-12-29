@@ -31,6 +31,7 @@ import numpy as np
 import pandas as pd
 from microplex.hierarchical import HierarchicalSynthesizer, HouseholdSchema
 from microplex.calibration import Calibrator
+from microplex.geography import derive_geographies
 
 # State FIPS to abbreviation
 FIPS_TO_STATE = {
@@ -190,6 +191,11 @@ def synthesize_with_blocks(
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Synthesize households with block-level geographic assignments.
 
+    Pipeline:
+    1. Synthesize minimal dataset (only block_geoid assigned during synthesis)
+    2. Derive parent geographies post-hoc (tract, county, CD, SLD)
+    3. Ready for calibration
+
     Args:
         hh: CPS household data
         persons: CPS person data
@@ -201,7 +207,7 @@ def synthesize_with_blocks(
         Tuple of (synthetic_households, synthetic_persons)
     """
     print("\n" + "=" * 70)
-    print("SYNTHESIZING WITH BLOCK-LEVEL ASSIGNMENTS")
+    print("SYNTHESIZING WITH BLOCK-LEVEL ASSIGNMENTS (NEW PIPELINE)")
     print("=" * 70)
 
     # Create schema
@@ -210,11 +216,11 @@ def synthesize_with_blocks(
         person_vars=['age', 'sex', 'income', 'employment_status', 'education', 'relationship_to_head'],
     )
 
-    # Initialize synthesizer (without CD probabilities - we'll assign blocks post-synthesis)
+    # Initialize synthesizer WITH block_probabilities (will assign only block_geoid)
     synth = HierarchicalSynthesizer(
         schema=schema,
         random_state=seed,
-        # Note: We don't pass cd_probabilities here - we'll assign blocks after generation
+        block_probabilities=block_probs,  # Pass block probs to synthesizer
     )
 
     # Fit on CPS data
@@ -227,20 +233,31 @@ def synthesize_with_blocks(
         verbose=True,
     )
 
-    # Generate synthetic data (without geographic assignments yet)
+    # Generate synthetic data (with block_geoid assigned during synthesis)
     print(f"\nGenerating {n_households:,} synthetic households...")
     synthetic_hh, synthetic_persons = synth.generate(
         n_households=n_households,
         verbose=True,
     )
 
-    # Build block lookup and assign blocks
-    print("\nBuilding block lookup...")
-    block_lookup = build_block_lookup(block_probs)
-    print(f"  States in lookup: {len(block_lookup)}")
+    # STEP 2: Derive parent geographies post-hoc
+    print("\nDeriving parent geographies from block assignments...")
+    geos = derive_geographies(
+        synthetic_hh['block_geoid'],
+        include_cd=True,
+        include_sld=True,
+        block_data=block_probs,
+    )
 
-    print("\nAssigning blocks to households...")
-    synthetic_hh = assign_blocks(synthetic_hh, block_lookup, random_state=seed)
+    # Merge derived geographies into synthetic_hh
+    for col in ['tract_geoid', 'county_fips', 'cd_id']:
+        if col in geos.columns:
+            synthetic_hh[col] = geos[col].values
+
+    # Optionally add SLD columns
+    for col in ['sldu_id', 'sldl_id']:
+        if col in geos.columns:
+            synthetic_hh[col] = geos[col].values
 
     # Print assignment summary
     print(f"\nGeographic assignment summary:")
@@ -248,6 +265,10 @@ def synthesize_with_blocks(
     print(f"  Unique tracts assigned: {synthetic_hh['tract_geoid'].nunique():,}")
     print(f"  Unique counties assigned: {synthetic_hh['county_fips'].nunique()}")
     print(f"  Unique CDs assigned: {synthetic_hh['cd_id'].nunique()}")
+    if 'sldu_id' in synthetic_hh.columns:
+        print(f"  Unique SLDUs assigned: {synthetic_hh['sldu_id'].nunique()}")
+    if 'sldl_id' in synthetic_hh.columns:
+        print(f"  Unique SLDLs assigned: {synthetic_hh['sldl_id'].nunique()}")
     print(f"  Unique states: {synthetic_hh['state_fips'].nunique()}")
 
     # CD distribution
@@ -426,6 +447,7 @@ def main():
         'household_id', 'n_persons', 'n_adults', 'n_children',
         'state_fips', 'tenure', 'weight',
         'block_geoid', 'tract_geoid', 'county_fips', 'cd_id',
+        'sldu_id', 'sldl_id',  # State legislative districts
         'hh_income',
     ]
     # Only keep columns that exist
@@ -438,7 +460,8 @@ def main():
     persons_output_path = data_dir / "microplex_synthetic_persons_with_blocks.parquet"
 
     # Merge geography to persons (only new columns not already in persons)
-    geo_cols = ['household_id', 'block_geoid', 'tract_geoid', 'county_fips', 'cd_id', 'state_fips', 'weight']
+    geo_cols = ['household_id', 'block_geoid', 'tract_geoid', 'county_fips', 'cd_id',
+                'sldu_id', 'sldl_id', 'state_fips', 'weight']
     geo_cols = [c for c in geo_cols if c in calibrated_hh.columns]
 
     # Drop any overlapping columns from persons before merge (except household_id)
