@@ -41,6 +41,37 @@ eitc                            $72.7B       $72.7B     0.00%
 
 These require income imputation (like PE's enhanced CPS) to fix.
 
+## Framework Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    MICROPLEX PE PARITY FRAMEWORK                     │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  TargetRegistry (88 targets)                                       │
+│  ─────────────────────────────                                     │
+│  • State populations (51)     • Benefit programs (8)               │
+│  • IRS SOI income (14)        • Health insurance (7)               │
+│  • Tax aggregates (4)         • Demographics (4)                   │
+│                                                                     │
+│  CalibrationHarness                                                │
+│  ─────────────────────                                             │
+│  • Select target subsets by category/level/group                   │
+│  • Run IPF calibration experiments                                 │
+│  • Track data availability vs accuracy                             │
+│  • Compare results across experiments                              │
+│                                                                     │
+│  Usage:                                                            │
+│  ───────                                                           │
+│  from microplex import CalibrationHarness, run_pe_parity_suite     │
+│  harness = CalibrationHarness()                                    │
+│  result = harness.run_experiment(df, "my_test",                    │
+│      groups=["state_population", "irs_soi_income"],                │
+│      only_available=True)                                          │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
 ## Target Categories
 
 ### ✅ Microplex Has (PE Doesn't)
