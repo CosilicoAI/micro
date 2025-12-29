@@ -120,14 +120,73 @@ class TargetRegistry:
 
         self.groups["state_population"] = state_pops
 
-        # Congressional Districts (placeholder - 436 CDs)
+        # Congressional Districts - load from data file
         cd_pops = TargetGroup("cd_population", TargetCategory.GEOGRAPHY)
-        # Would load from data/district_targets.parquet
+        try:
+            cd_df = pd.read_parquet("data/district_targets.parquet")
+            for _, row in cd_df.iterrows():
+                cd_pops.add(TargetSpec(
+                    name=f"cd_{row['district_id']}",
+                    category=TargetCategory.GEOGRAPHY,
+                    level=TargetLevel.CD,
+                    value=row['population'],
+                    column=None,
+                    filter_column="cd_geoid",
+                    filter_value=row['district_id'],
+                    aggregation="count",
+                    source="Census ACS",
+                    unit="persons",
+                ))
+        except FileNotFoundError:
+            pass  # Data file not available
         self.groups["cd_population"] = cd_pops
 
-        # State Legislative Districts (placeholder)
+        # State Legislative Districts - load from block data if available
         sldu_pops = TargetGroup("sldu_population", TargetCategory.GEOGRAPHY)
         sldl_pops = TargetGroup("sldl_population", TargetCategory.GEOGRAPHY)
+        try:
+            # Load SLD targets from block probabilities
+            blocks = pd.read_parquet("data/block_probabilities.parquet")
+
+            # SLDU (State Legislative District Upper)
+            sldu_col = 'sldu_id' if 'sldu_id' in blocks.columns else 'sldu_geoid'
+            if sldu_col in blocks.columns:
+                sldu_pop = blocks.groupby(sldu_col)['population'].sum()
+                for sldu_id, pop in sldu_pop.items():
+                    if pd.notna(sldu_id) and pop > 0:
+                        sldu_pops.add(TargetSpec(
+                            name=f"sldu_{sldu_id}",
+                            category=TargetCategory.GEOGRAPHY,
+                            level=TargetLevel.STATE,
+                            value=pop,
+                            column=None,
+                            filter_column="sldu_id",
+                            filter_value=sldu_id,
+                            aggregation="count",
+                            source="Census",
+                            unit="persons",
+                        ))
+
+            # SLDL (State Legislative District Lower)
+            sldl_col = 'sldl_id' if 'sldl_id' in blocks.columns else 'sldl_geoid'
+            if sldl_col in blocks.columns:
+                sldl_pop = blocks.groupby(sldl_col)['population'].sum()
+                for sldl_id, pop in sldl_pop.items():
+                    if pd.notna(sldl_id) and pop > 0:
+                        sldl_pops.add(TargetSpec(
+                            name=f"sldl_{sldl_id}",
+                            category=TargetCategory.GEOGRAPHY,
+                            level=TargetLevel.STATE,
+                            value=pop,
+                            column=None,
+                            filter_column="sldl_id",
+                            filter_value=sldl_id,
+                            aggregation="count",
+                            source="Census",
+                            unit="persons",
+                        ))
+        except FileNotFoundError:
+            pass
         self.groups["sldu_population"] = sldu_pops
         self.groups["sldl_population"] = sldl_pops
 
