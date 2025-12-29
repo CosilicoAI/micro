@@ -122,23 +122,51 @@ class TargetRegistry:
 
         # Congressional Districts - load from data file
         cd_pops = TargetGroup("cd_population", TargetCategory.GEOGRAPHY)
+
+        # FIPS to state abbreviation mapping
+        FIPS_TO_ABBR = {
+            '01': 'AL', '02': 'AK', '04': 'AZ', '05': 'AR', '06': 'CA',
+            '08': 'CO', '09': 'CT', '10': 'DE', '11': 'DC', '12': 'FL',
+            '13': 'GA', '15': 'HI', '16': 'ID', '17': 'IL', '18': 'IN',
+            '19': 'IA', '20': 'KS', '21': 'KY', '22': 'LA', '23': 'ME',
+            '24': 'MD', '25': 'MA', '26': 'MI', '27': 'MN', '28': 'MS',
+            '29': 'MO', '30': 'MT', '31': 'NE', '32': 'NV', '33': 'NH',
+            '34': 'NJ', '35': 'NM', '36': 'NY', '37': 'NC', '38': 'ND',
+            '39': 'OH', '40': 'OK', '41': 'OR', '42': 'PA', '44': 'RI',
+            '45': 'SC', '46': 'SD', '47': 'TN', '48': 'TX', '49': 'UT',
+            '50': 'VT', '51': 'VA', '53': 'WA', '54': 'WV', '55': 'WI',
+            '56': 'WY',
+        }
+
         try:
             cd_df = pd.read_parquet("data/district_targets.parquet")
             for _, row in cd_df.iterrows():
+                # Convert FIPS-based ID (01-01) to abbr-based (AL-01)
+                fips_id = row['district_id']  # e.g., "01-01"
+                state_fips = fips_id.split('-')[0]
+                district_num = fips_id.split('-')[1]
+                state_abbr = FIPS_TO_ABBR.get(state_fips, state_fips)
+
+                # Handle at-large districts (00 -> AL)
+                if district_num == '00':
+                    cd_id = f"{state_abbr}-AL"
+                else:
+                    cd_id = f"{state_abbr}-{district_num}"
+
                 cd_pops.add(TargetSpec(
-                    name=f"cd_{row['district_id']}",
+                    name=f"cd_{fips_id}",
                     category=TargetCategory.GEOGRAPHY,
                     level=TargetLevel.CD,
                     value=row['population'],
                     column=None,
-                    filter_column="cd_geoid",
-                    filter_value=row['district_id'],
+                    filter_column="cd_id",
+                    filter_value=cd_id,
                     aggregation="count",
                     source="Census ACS",
                     unit="persons",
                 ))
         except FileNotFoundError:
-            pass  # Data file not available
+            pass
         self.groups["cd_population"] = cd_pops
 
         # State Legislative Districts - load from block data if available

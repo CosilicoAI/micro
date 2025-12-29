@@ -13,23 +13,22 @@ Tracking microplex calibration target coverage vs PolicyEngine-US.
 
 ## ✅ Working Calibration (2024-12-29)
 
-Successfully calibrating CPS to 65 targets:
-- **51 state populations**: 0% error
-- **14 income/benefit targets**: 0-4% error on most
+Successfully calibrating 500K synthetic households to geographic targets:
 
 ```
-Target                          Computed     Target     Error
-─────────────────────────────────────────────────────────────
-State populations (51)          331.4M       331.4M     0.00%
-rental_income                   $46.0B       $46.0B     0.00%
-self_employment_income          $418.9B      $436.4B    4.01%
-unemployment_compensation       $200.3B      $208.0B    3.72%
-taxable_pension_income          $827.6B      $827.6B    0.00%
-alimony_income                  $8.5B        $8.5B      0.00%
-snap                            $103.1B      $103.1B    0.00%
-ssi                             $78.5B       $78.5B     0.00%
-eitc                            $72.7B       $72.7B     0.00%
+Category           Targets   Mean Error    Exact Match   Time
+───────────────────────────────────────────────────────────────
+States                  51       0.000%         51/51     1.2s
+CDs                    440       0.455%       438/440     9.9s
+SLDUs                1,950       0.000%     1950/1950    57.8s
+State+CD (prod)        491       0.434%            -     11.1s
 ```
+
+**Key results:**
+- All 51 states: **exact match** (0% error)
+- All 440 CDs: **438 exact**, 2 with <1% error (missing coverage in sample)
+- All 1,950 SLDUs: **exact match** (0% error)
+- Production calibration converges in **2 iterations**
 
 ### Known Gaps (CPS Data Limitations)
 
@@ -166,12 +165,16 @@ Model capital gains distribution (not directly in CPS).
 
 ## Current Calibration
 
-With current targets, microplex calibrates to:
-- **436 CD populations** (0% error with 500K sample)
-- **~1,950 SLDU populations** (0% error with 500K sample)
-- **918 age distributions** (8% error with 100K sample)
+With 500K synthetic households, microplex achieves:
 
-Missing PolicyEngine parity:
-- Income totals by source (17)
-- Benefit spending aggregates (6)
-- State-level benefit enrollment (1,631)
+| Target Type | Count | Error | Status |
+|-------------|-------|-------|--------|
+| State populations | 51 | 0.00% | ✅ Exact |
+| CD populations | 440 | 0.45% | ✅ 438 exact |
+| SLDU populations | 1,950 | 0.00% | ✅ Exact |
+| SLDL populations | 4,813 | TBD | 🟡 Framework ready |
+
+**Gaps vs PolicyEngine:**
+- Income totals by source (17) - need CPS income columns
+- Benefit spending aggregates (6) - need benefit columns
+- State-level Medicaid/CHIP (1,631) - placeholder targets ready
