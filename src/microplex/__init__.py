@@ -91,6 +91,20 @@ from microplex.unified_calibration import (
     CalibrationTarget,
     calibrate_to_pe_targets,
 )
+from microplex.target_registry import (
+    TargetRegistry,
+    TargetSpec,
+    TargetCategory,
+    TargetLevel,
+    TargetGroup,
+    get_registry,
+    print_registry_summary,
+)
+from microplex.calibration_harness import (
+    CalibrationHarness,
+    CalibrationResult,
+    run_pe_parity_suite,
+)
 
 __version__ = "0.1.0"
 
@@ -155,4 +169,16 @@ __all__ = [
     "UnifiedCalibrator",
     "CalibrationTarget",
     "calibrate_to_pe_targets",
+    # Target Registry
+    "TargetRegistry",
+    "TargetSpec",
+    "TargetCategory",
+    "TargetLevel",
+    "TargetGroup",
+    "get_registry",
+    "print_registry_summary",
+    # Calibration Harness
+    "CalibrationHarness",
+    "CalibrationResult",
+    "run_pe_parity_suite",
 ]
