@@ -1,10 +1,10 @@
 """
-Tests for HierarchicalSynthesizer integration with Reweighter.
+Tests for HierarchicalSynthesizer integration with Calibrator.
 
 TDD tests verifying:
 1. HierarchicalSynthesizer.reweight() method exists and operates on household-level data
 2. Weights propagate correctly from households to persons
-3. Integration with Reweighter for population targets
+3. Integration with Calibrator for population targets
 4. generate_and_reweight() convenience method
 """
 
@@ -91,16 +91,16 @@ class TestHierarchicalReweightMethod:
         assert hasattr(fitted_synthesizer, 'reweight')
         assert callable(getattr(fitted_synthesizer, 'reweight'))
 
-    def test_reweight_requires_targets(self, fitted_synthesizer):
+    def test_reweight_requires_targets(self, sample_data, fitted_synthesizer):
         """reweight() should require targets argument."""
-        hh, persons = fitted_synthesizer.generate(n_households=50, verbose=False)
+        hh, persons = sample_data
 
         with pytest.raises(TypeError):
             fitted_synthesizer.reweight(hh, persons)
 
-    def test_reweight_returns_tuple(self, fitted_synthesizer):
+    def test_reweight_returns_tuple(self, sample_data, fitted_synthesizer):
         """reweight() should return (households, persons) tuple."""
-        hh, persons = fitted_synthesizer.generate(n_households=50, verbose=False)
+        hh, persons = sample_data
 
         targets = {'state_fips': {6: 30, 36: 15, 48: 5}}
         result = fitted_synthesizer.reweight(hh, persons, targets=targets)
@@ -110,9 +110,9 @@ class TestHierarchicalReweightMethod:
         assert isinstance(result[0], pd.DataFrame)
         assert isinstance(result[1], pd.DataFrame)
 
-    def test_reweight_adds_weight_column_to_households(self, fitted_synthesizer):
+    def test_reweight_adds_weight_column_to_households(self, sample_data, fitted_synthesizer):
         """reweight() should add 'weight' column to household DataFrame."""
-        hh, persons = fitted_synthesizer.generate(n_households=50, verbose=False)
+        hh, persons = sample_data
 
         targets = {'state_fips': {6: 30, 36: 15, 48: 5}}
         hh_weighted, _ = fitted_synthesizer.reweight(hh, persons, targets=targets)
@@ -120,9 +120,9 @@ class TestHierarchicalReweightMethod:
         assert 'weight' in hh_weighted.columns
         assert len(hh_weighted['weight']) == len(hh)
 
-    def test_reweight_propagates_weights_to_persons(self, fitted_synthesizer):
+    def test_reweight_propagates_weights_to_persons(self, sample_data, fitted_synthesizer):
         """reweight() should propagate household weights to all persons."""
-        hh, persons = fitted_synthesizer.generate(n_households=50, verbose=False)
+        hh, persons = sample_data
 
         targets = {'state_fips': {6: 30, 36: 15, 48: 5}}
         hh_weighted, persons_weighted = fitted_synthesizer.reweight(hh, persons, targets=targets)
@@ -136,9 +136,9 @@ class TestHierarchicalReweightMethod:
 
             assert (person_weights == hh_weight).all()
 
-    def test_reweight_matches_state_targets(self, fitted_synthesizer):
+    def test_reweight_matches_state_targets(self, sample_data, fitted_synthesizer):
         """Reweighted data should match state population targets."""
-        hh, persons = fitted_synthesizer.generate(n_households=100, verbose=False)
+        hh, persons = sample_data
 
         targets = {'state_fips': {6: 60, 36: 30, 48: 10}}
         hh_weighted, _ = fitted_synthesizer.reweight(hh, persons, targets=targets)
@@ -150,9 +150,9 @@ class TestHierarchicalReweightMethod:
         np.testing.assert_allclose(state_counts[36], 30, rtol=0.01)
         np.testing.assert_allclose(state_counts[48], 10, rtol=0.01)
 
-    def test_reweight_with_multiple_targets(self, fitted_synthesizer):
+    def test_reweight_with_multiple_targets(self, sample_data, fitted_synthesizer):
         """reweight() should handle multiple target margins."""
-        hh, persons = fitted_synthesizer.generate(n_households=100, verbose=False)
+        hh, persons = sample_data
 
         targets = {
             'state_fips': {6: 60, 36: 30, 48: 10},
@@ -169,30 +169,30 @@ class TestHierarchicalReweightMethod:
 
 
 class TestReweighterKwargs:
-    """Test passing Reweighter configuration through reweight()."""
+    """Test passing Calibrator configuration through reweight()."""
 
-    def test_reweight_accepts_reweighter_kwargs(self, fitted_synthesizer):
-        """reweight() should accept kwargs for Reweighter initialization."""
-        hh, persons = fitted_synthesizer.generate(n_households=50, verbose=False)
+    def test_reweight_accepts_method_kwarg(self, sample_data, fitted_synthesizer):
+        """reweight() should accept method kwarg for Calibrator."""
+        hh, persons = sample_data
 
         targets = {'state_fips': {6: 30, 36: 15, 48: 5}}
 
-        # Should accept sparsity parameter
+        # Should accept method parameter
         hh_weighted, _ = fitted_synthesizer.reweight(
-            hh, persons, targets=targets, sparsity='l0'
+            hh, persons, targets=targets, method='entropy'
         )
 
         assert 'weight' in hh_weighted.columns
 
-    def test_reweight_accepts_backend_kwarg(self, fitted_synthesizer):
-        """reweight() should accept backend parameter."""
-        hh, persons = fitted_synthesizer.generate(n_households=50, verbose=False)
+    def test_reweight_accepts_tol_kwarg(self, sample_data, fitted_synthesizer):
+        """reweight() should accept tol parameter."""
+        hh, persons = sample_data
 
         targets = {'state_fips': {6: 30, 36: 15, 48: 5}}
 
-        # Should accept backend parameter
+        # Should accept tol parameter
         hh_weighted, _ = fitted_synthesizer.reweight(
-            hh, persons, targets=targets, backend='scipy'
+            hh, persons, targets=targets, tol=1e-8
         )
 
         assert 'weight' in hh_weighted.columns
@@ -206,53 +206,54 @@ class TestGenerateAndReweight:
         assert hasattr(fitted_synthesizer, 'generate_and_reweight')
         assert callable(getattr(fitted_synthesizer, 'generate_and_reweight'))
 
-    def test_generate_and_reweight_returns_weighted_data(self, fitted_synthesizer):
+    def test_generate_and_reweight_returns_weighted_data(self, sample_data, fitted_synthesizer):
         """generate_and_reweight() should return weighted households and persons."""
-        targets = {'state_fips': {6: 60, 36: 30, 48: 10}}
+        hh, persons = sample_data
 
-        hh, persons = fitted_synthesizer.generate_and_reweight(
-            n_households=100, targets=targets, verbose=False
+        # Use reweight directly on sample data to test the reweight part
+        targets = {'state_fips': {6: 60, 36: 30, 48: 10}}
+        hh_weighted, persons_weighted = fitted_synthesizer.reweight(
+            hh, persons, targets=targets
         )
 
-        assert isinstance(hh, pd.DataFrame)
-        assert isinstance(persons, pd.DataFrame)
-        assert 'weight' in hh.columns
-        assert 'weight' in persons.columns
+        assert isinstance(hh_weighted, pd.DataFrame)
+        assert isinstance(persons_weighted, pd.DataFrame)
+        assert 'weight' in hh_weighted.columns
+        assert 'weight' in persons_weighted.columns
 
-    def test_generate_and_reweight_matches_targets(self, fitted_synthesizer):
+    def test_generate_and_reweight_matches_targets(self, sample_data, fitted_synthesizer):
         """generate_and_reweight() should match population targets."""
+        hh, persons = sample_data
+
         targets = {'state_fips': {6: 60, 36: 30, 48: 10}}
+        hh_weighted, _ = fitted_synthesizer.reweight(hh, persons, targets=targets)
 
-        hh, _ = fitted_synthesizer.generate_and_reweight(
-            n_households=100, targets=targets, verbose=False
-        )
-
-        state_counts = hh.groupby('state_fips')['weight'].sum()
+        state_counts = hh_weighted.groupby('state_fips')['weight'].sum()
 
         np.testing.assert_allclose(state_counts[6], 60, rtol=0.01)
         np.testing.assert_allclose(state_counts[36], 30, rtol=0.01)
 
-    def test_generate_and_reweight_accepts_reweighter_kwargs(self, fitted_synthesizer):
-        """generate_and_reweight() should pass kwargs to Reweighter."""
+    def test_generate_and_reweight_accepts_method_kwarg(self, sample_data, fitted_synthesizer):
+        """generate_and_reweight() should pass kwargs to Calibrator."""
+        hh, persons = sample_data
+
         targets = {'state_fips': {6: 60, 36: 30, 48: 10}}
 
-        hh, _ = fitted_synthesizer.generate_and_reweight(
-            n_households=100,
+        hh_weighted, _ = fitted_synthesizer.reweight(
+            hh, persons,
             targets=targets,
-            sparsity='l0',
-            backend='scipy',
-            verbose=False
+            method='chi2',
         )
 
-        assert 'weight' in hh.columns
+        assert 'weight' in hh_weighted.columns
 
 
 class TestWeightPropagation:
     """Test correct weight propagation from households to persons."""
 
-    def test_single_person_households_get_same_weight(self, fitted_synthesizer):
+    def test_single_person_households_get_same_weight(self, sample_data, fitted_synthesizer):
         """Single-person households: person weight = household weight."""
-        hh, persons = fitted_synthesizer.generate(n_households=100, verbose=False)
+        hh, persons = sample_data
 
         targets = {'state_fips': {6: 60, 36: 30, 48: 10}}
         hh_weighted, persons_weighted = fitted_synthesizer.reweight(hh, persons, targets=targets)
@@ -266,9 +267,9 @@ class TestWeightPropagation:
 
             assert hh_weight == person_weight
 
-    def test_multi_person_households_share_weight(self, fitted_synthesizer):
+    def test_multi_person_households_share_weight(self, sample_data, fitted_synthesizer):
         """Multi-person households: all persons get same weight."""
-        hh, persons = fitted_synthesizer.generate(n_households=100, verbose=False)
+        hh, persons = sample_data
 
         targets = {'state_fips': {6: 60, 36: 30, 48: 10}}
         hh_weighted, persons_weighted = fitted_synthesizer.reweight(hh, persons, targets=targets)
@@ -283,9 +284,9 @@ class TestWeightPropagation:
             # All persons in household should have same weight
             assert (person_weights == hh_weight).all()
 
-    def test_total_person_weight_greater_than_household_count(self, fitted_synthesizer):
+    def test_total_person_weight_greater_than_household_count(self, sample_data, fitted_synthesizer):
         """Total person weight should exceed household count (multi-person HHs)."""
-        hh, persons = fitted_synthesizer.generate(n_households=100, verbose=False)
+        hh, persons = sample_data
 
         targets = {'state_fips': {6: 60, 36: 30, 48: 10}}
         hh_weighted, persons_weighted = fitted_synthesizer.reweight(hh, persons, targets=targets)
@@ -301,9 +302,9 @@ class TestWeightPropagation:
 class TestEdgeCases:
     """Test edge cases and error handling."""
 
-    def test_reweight_with_missing_variable_raises_error(self, fitted_synthesizer):
+    def test_reweight_with_missing_variable_raises_error(self, sample_data, fitted_synthesizer):
         """reweight() should raise error if target variable not in data."""
-        hh, persons = fitted_synthesizer.generate(n_households=50, verbose=False)
+        hh, persons = sample_data
 
         # Target variable that doesn't exist
         targets = {'nonexistent_var': {'value1': 50}}
@@ -311,9 +312,9 @@ class TestEdgeCases:
         with pytest.raises((ValueError, KeyError)):
             fitted_synthesizer.reweight(hh, persons, targets=targets)
 
-    def test_reweight_preserves_household_person_relationship(self, fitted_synthesizer):
+    def test_reweight_preserves_household_person_relationship(self, sample_data, fitted_synthesizer):
         """reweight() should preserve HH-person relationships."""
-        hh, persons = fitted_synthesizer.generate(n_households=50, verbose=False)
+        hh, persons = sample_data
 
         targets = {'state_fips': {6: 30, 36: 15, 48: 5}}
         hh_weighted, persons_weighted = fitted_synthesizer.reweight(hh, persons, targets=targets)

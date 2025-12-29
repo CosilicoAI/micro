@@ -282,6 +282,108 @@ class HierarchicalSynthesizer:
 
         return synthetic_hh, synthetic_persons
 
+    def reweight(
+        self,
+        hh_data: pd.DataFrame,
+        person_data: pd.DataFrame,
+        targets: Dict[str, Dict],
+        continuous_targets: Optional[Dict[str, float]] = None,
+        **reweighter_kwargs,
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Reweight households and persons to match population targets.
+
+        Weights are computed at the household level and then propagated
+        to all persons in each household.
+
+        Args:
+            hh_data: Household DataFrame (from generate())
+            person_data: Person DataFrame (from generate())
+            targets: Marginal targets {variable: {category: count}}
+            continuous_targets: Optional continuous totals {variable: sum}
+            **reweighter_kwargs: Additional kwargs for Calibrator
+
+        Returns:
+            (hh_weighted, persons_weighted) tuple with 'weight' column added
+        """
+        from .calibration import Calibrator
+
+        hh_df = hh_data.copy()
+        persons_df = person_data.copy()
+
+        # Initialize calibrator with provided method/backend
+        method = reweighter_kwargs.pop('method', 'ipf')
+        calibrator = Calibrator(method=method, **reweighter_kwargs)
+
+        # Fit calibration to household data
+        calibrator.fit(
+            hh_df,
+            marginal_targets=targets,
+            continuous_targets=continuous_targets,
+        )
+
+        # Add weights to households
+        hh_df['weight'] = calibrator.weights_
+
+        # Propagate household weights to persons
+        weight_map = hh_df.set_index(self.schema.hh_id_col)['weight']
+        persons_df['weight'] = persons_df[self.schema.hh_id_col].map(weight_map)
+
+        return hh_df, persons_df
+
+    def generate_and_reweight(
+        self,
+        n_households: int,
+        targets: Dict[str, Dict],
+        continuous_targets: Optional[Dict[str, float]] = None,
+        return_units: bool = False,
+        verbose: bool = True,
+        **reweighter_kwargs,
+    ) -> Union[Tuple[pd.DataFrame, pd.DataFrame],
+               Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]]:
+        """
+        Generate synthetic data and reweight to match targets in one call.
+
+        Convenience method that combines generate() and reweight().
+
+        Args:
+            n_households: Number of households to generate
+            targets: Marginal targets {variable: {category: count}}
+            continuous_targets: Optional continuous totals {variable: sum}
+            return_units: If True, also return tax_units and spm_units
+            verbose: Print progress
+            **reweighter_kwargs: Additional kwargs for Calibrator
+
+        Returns:
+            (hh_weighted, persons_weighted) or
+            (hh_weighted, persons_weighted, tax_units, spm_units)
+        """
+        # Generate synthetic data
+        if return_units:
+            hh, persons, tax_units, spm_units = self.generate(
+                n_households=n_households,
+                return_units=True,
+                verbose=verbose,
+            )
+        else:
+            hh, persons = self.generate(
+                n_households=n_households,
+                return_units=False,
+                verbose=verbose,
+            )
+
+        # Reweight to match targets
+        hh_weighted, persons_weighted = self.reweight(
+            hh, persons,
+            targets=targets,
+            continuous_targets=continuous_targets,
+            **reweighter_kwargs,
+        )
+
+        if return_units:
+            return hh_weighted, persons_weighted, tax_units, spm_units
+        return hh_weighted, persons_weighted
+
     def _validate_data(self) -> None:
         """Validate that data has required columns."""
         hh_missing = set(self.schema.hh_vars) - set(self._hh_data.columns)
