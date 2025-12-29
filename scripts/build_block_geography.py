@@ -124,36 +124,39 @@ def fetch_block_to_cd_crosswalk() -> pd.DataFrame:
     """Fetch block-to-CD assignment from Census.
 
     Census provides Block Assignment Files (BAF) that map each block to its CD.
+    Uses the 118th Congress tract-to-CD relationship file.
     """
     print("Fetching block-to-CD crosswalk...")
 
-    # The BAF is a large file, let's try the API approach first
-    # For 118th Congress, we need the 2022 BAF
-
-    # Alternative: Use the tract-to-CD crosswalk and derive block CDs from tract
+    # Tract-to-CD crosswalk for 118th Congress
     url = "https://www2.census.gov/geo/docs/maps-data/data/rel2020/cd-sld/tab20_cd11820_tract20_natl.txt"
 
     try:
         df = pd.read_csv(url, delimiter='|', dtype=str)
         print(f"  Got {len(df)} tract-to-CD mappings")
 
-        # Create tract GEOID
-        df['tract_geoid'] = df['STATEFP20'] + df['COUNTYFP20'] + df['TRACTCE20']
-        df['cd'] = df['CD118FP']
-        df['state_fips'] = df['STATEFP20']
+        # Extract from GEOID columns:
+        # GEOID_CD118_20 = SSCC (state + district)
+        # GEOID_TRACT_20 = SSCCCTTTTTT (state + county + tract)
+        df['tract_geoid'] = df['GEOID_TRACT_20']
+        df['state_fips'] = df['GEOID_TRACT_20'].str[:2]
+        df['cd'] = df['GEOID_CD118_20'].str[2:4]  # District number
 
         # Create CD identifier
         df['state_abbrev'] = df['state_fips'].map(FIPS_TO_STATE)
         df['cd_id'] = df['state_abbrev'] + '-' + df['cd']
 
-        # Handle at-large
+        # Handle at-large (district 00 or 98)
         df.loc[df['cd'] == '00', 'cd_id'] = df.loc[df['cd'] == '00', 'state_abbrev'] + '-AL'
+        df.loc[df['cd'] == '98', 'cd_id'] = df.loc[df['cd'] == '98', 'state_abbrev'] + '-AL'
         df.loc[df['cd'] == 'ZZ', 'cd_id'] = df.loc[df['cd'] == 'ZZ', 'state_abbrev'] + '-ZZ'
 
         return df[['tract_geoid', 'cd_id', 'state_fips']].drop_duplicates()
 
     except Exception as e:
         print(f"  Error: {e}")
+        import traceback
+        traceback.print_exc()
         return pd.DataFrame()
 
 
