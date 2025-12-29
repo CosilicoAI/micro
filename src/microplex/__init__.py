@@ -81,6 +81,16 @@ from microplex.statmatch_backend import (
     create_synthesizer,
     HAS_STATMATCH,
 )
+from microplex.pe_targets import (
+    PETargets,
+    get_pe_targets,
+    create_calibration_targets,
+)
+from microplex.unified_calibration import (
+    UnifiedCalibrator,
+    CalibrationTarget,
+    calibrate_to_pe_targets,
+)
 
 __version__ = "0.1.0"
 
@@ -138,4 +148,11 @@ __all__ = [
     "DisabilityTransitionModel",
     "MarriageTransition",
     "DivorceTransition",
+    # PE Parity
+    "PETargets",
+    "get_pe_targets",
+    "create_calibration_targets",
+    "UnifiedCalibrator",
+    "CalibrationTarget",
+    "calibrate_to_pe_targets",
 ]

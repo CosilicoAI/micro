@@ -8,7 +8,38 @@ Tracking microplex calibration target coverage vs PolicyEngine-US.
 |--------|-----------|--------------|-----|
 | **Total Targets** | 1,764 | 1,661 | +103 |
 | **National** | 1,764 | 30 | +1,734 |
-| **State-level** | 0 | 1,631 | -1,631 |
+| **State-level** | 51 | 1,631 | -1,580 |
+
+## ✅ Working Calibration (2024-12-29)
+
+Successfully calibrating CPS to 65 targets:
+- **51 state populations**: 0% error
+- **14 income/benefit targets**: 0-4% error on most
+
+```
+Target                          Computed     Target     Error
+─────────────────────────────────────────────────────────────
+State populations (51)          331.4M       331.4M     0.00%
+rental_income                   $46.0B       $46.0B     0.00%
+self_employment_income          $418.9B      $436.4B    4.01%
+unemployment_compensation       $200.3B      $208.0B    3.72%
+taxable_pension_income          $827.6B      $827.6B    0.00%
+alimony_income                  $8.5B        $8.5B      0.00%
+snap                            $103.1B      $103.1B    0.00%
+ssi                             $78.5B       $78.5B     0.00%
+eitc                            $72.7B       $72.7B     0.00%
+```
+
+### Known Gaps (CPS Data Limitations)
+
+| Target | Error | Reason |
+|--------|-------|--------|
+| capital_gains | 96% | CPS has limited capital gains data |
+| social_security | 35% | Underreported in CPS |
+| employment_income | 21% | Underreported in CPS |
+| dividend_income | 73% | Underreported in CPS |
+
+These require income imputation (like PE's enhanced CPS) to fix.
 
 ## Target Categories
 
