@@ -83,6 +83,7 @@ def load_block_probabilities(
 def derive_geographies(
     block_geoids: Union[List[str], np.ndarray, pd.Series],
     include_cd: bool = False,
+    include_sld: bool = False,
     block_data: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """
@@ -94,11 +95,13 @@ def derive_geographies(
     Args:
         block_geoids: List/array of 15-character block GEOIDs
         include_cd: If True, include congressional district lookup (requires block_data)
-        block_data: Block probabilities DataFrame for CD lookup
+        include_sld: If True, include state legislative district lookup (requires block_data)
+        block_data: Block probabilities DataFrame for CD/SLD lookup
 
     Returns:
         DataFrame with columns: block_geoid, state_fips, county_fips, tract_geoid
         If include_cd=True, also includes cd_id column.
+        If include_sld=True, also includes sldu_id and sldl_id columns.
 
     Example:
         >>> geoids = ["010010201001000", "060372073021001"]
@@ -114,13 +117,23 @@ def derive_geographies(
         "tract_geoid": geoids.str[:TRACT_GEOID_LEN],
     })
 
-    if include_cd:
+    if include_cd or include_sld:
         if block_data is None:
             block_data = load_block_probabilities()
 
+    if include_cd:
         # Create lookup dict for CD
         cd_lookup = dict(zip(block_data["geoid"], block_data["cd_id"]))
         result["cd_id"] = geoids.map(cd_lookup)
+
+    if include_sld:
+        # Create lookup dicts for SLD
+        if "sldu_id" in block_data.columns:
+            sldu_lookup = dict(zip(block_data["geoid"], block_data["sldu_id"]))
+            result["sldu_id"] = geoids.map(sldu_lookup)
+        if "sldl_id" in block_data.columns:
+            sldl_lookup = dict(zip(block_data["geoid"], block_data["sldl_id"]))
+            result["sldl_id"] = geoids.map(sldl_lookup)
 
     return result
 
@@ -164,6 +177,8 @@ class BlockGeography:
         self._data_path = data_path
         self._data: Optional[pd.DataFrame] = None
         self._cd_lookup: Optional[Dict[str, str]] = None
+        self._sldu_lookup: Optional[Dict[str, str]] = None
+        self._sldl_lookup: Optional[Dict[str, str]] = None
         self._state_blocks: Optional[Dict[str, pd.DataFrame]] = None
 
         if not lazy_load:
@@ -254,15 +269,69 @@ class BlockGeography:
             'CA-37'
         """
         if self._cd_lookup is None:
-            self._build_cd_lookup()
+            self._build_lookups()
 
         return self._cd_lookup.get(block_geoid)
 
-    def _build_cd_lookup(self) -> None:
-        """Build congressional district lookup dictionary."""
+    def get_sldu(self, block_geoid: str) -> Optional[str]:
+        """
+        Get State Senate (upper chamber) district ID from block GEOID.
+
+        Args:
+            block_geoid: 15-character Census block GEOID
+
+        Returns:
+            SLDU ID (e.g., "CA-SLDU-01") or None if not found
+
+        Example:
+            >>> geo = BlockGeography()
+            >>> geo.get_sldu("060372073021001")
+            'CA-SLDU-22'
+        """
+        if self._sldu_lookup is None:
+            self._build_lookups()
+
+        return self._sldu_lookup.get(block_geoid)
+
+    def get_sldl(self, block_geoid: str) -> Optional[str]:
+        """
+        Get State House (lower chamber) district ID from block GEOID.
+
+        Note: Nebraska has a unicameral legislature, so SLDL will be None
+        for Nebraska blocks.
+
+        Args:
+            block_geoid: 15-character Census block GEOID
+
+        Returns:
+            SLDL ID (e.g., "CA-SLDL-40") or None if not found
+
+        Example:
+            >>> geo = BlockGeography()
+            >>> geo.get_sldl("060372073021001")
+            'CA-SLDL-46'
+        """
+        if self._sldl_lookup is None:
+            self._build_lookups()
+
+        return self._sldl_lookup.get(block_geoid)
+
+    def _build_lookups(self) -> None:
+        """Build lookup dictionaries for CD and SLD."""
         self._cd_lookup = dict(zip(self.data["geoid"], self.data["cd_id"]))
 
-    def get_all_geographies(self, block_geoid: str) -> Dict[str, str]:
+        # SLD lookups (may not exist in older data)
+        if "sldu_id" in self.data.columns:
+            self._sldu_lookup = dict(zip(self.data["geoid"], self.data["sldu_id"]))
+        else:
+            self._sldu_lookup = {}
+
+        if "sldl_id" in self.data.columns:
+            self._sldl_lookup = dict(zip(self.data["geoid"], self.data["sldl_id"]))
+        else:
+            self._sldl_lookup = {}
+
+    def get_all_geographies(self, block_geoid: str) -> Dict[str, Optional[str]]:
         """
         Get all derived geographies for a block GEOID.
 
@@ -270,19 +339,23 @@ class BlockGeography:
             block_geoid: 15-character Census block GEOID
 
         Returns:
-            Dictionary with keys: state_fips, county_fips, tract_geoid, cd_id
+            Dictionary with keys: state_fips, county_fips, tract_geoid, cd_id,
+            sldu_id, sldl_id
 
         Example:
             >>> geo = BlockGeography()
             >>> geo.get_all_geographies("060372073021001")
             {'state_fips': '06', 'county_fips': '06037',
-             'tract_geoid': '06037207302', 'cd_id': 'CA-37'}
+             'tract_geoid': '06037207302', 'cd_id': 'CA-37',
+             'sldu_id': 'CA-SLDU-22', 'sldl_id': 'CA-SLDL-46'}
         """
         return {
             "state_fips": self.get_state(block_geoid),
             "county_fips": self.get_county(block_geoid),
             "tract_geoid": self.get_tract(block_geoid),
             "cd_id": self.get_cd(block_geoid),
+            "sldu_id": self.get_sldu(block_geoid),
+            "sldl_id": self.get_sldl(block_geoid),
         }
 
     def sample_blocks(
@@ -450,6 +523,44 @@ class BlockGeography:
             >>> print(f"District has {len(cd_blocks):,} blocks")
         """
         return self.data[self.data["cd_id"] == cd_id].copy()
+
+    def get_blocks_in_sldu(self, sldu_id: str) -> pd.DataFrame:
+        """
+        Get all blocks in a State Senate (upper chamber) district.
+
+        Args:
+            sldu_id: SLDU ID (e.g., "CA-SLDU-22")
+
+        Returns:
+            DataFrame with block data for the State Senate district
+
+        Example:
+            >>> geo = BlockGeography()
+            >>> sldu_blocks = geo.get_blocks_in_sldu("CA-SLDU-22")
+            >>> print(f"District has {len(sldu_blocks):,} blocks")
+        """
+        if "sldu_id" not in self.data.columns:
+            return pd.DataFrame()
+        return self.data[self.data["sldu_id"] == sldu_id].copy()
+
+    def get_blocks_in_sldl(self, sldl_id: str) -> pd.DataFrame:
+        """
+        Get all blocks in a State House (lower chamber) district.
+
+        Args:
+            sldl_id: SLDL ID (e.g., "CA-SLDL-46")
+
+        Returns:
+            DataFrame with block data for the State House district
+
+        Example:
+            >>> geo = BlockGeography()
+            >>> sldl_blocks = geo.get_blocks_in_sldl("CA-SLDL-46")
+            >>> print(f"District has {len(sldl_blocks):,} blocks")
+        """
+        if "sldl_id" not in self.data.columns:
+            return pd.DataFrame()
+        return self.data[self.data["sldl_id"] == sldl_id].copy()
 
     @property
     def states(self) -> List[str]:

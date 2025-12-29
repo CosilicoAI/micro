@@ -366,3 +366,133 @@ class TestDeriveGeographies:
         geoids = np.array(["060372073021001", "010010201001000"])
         result = derive_geographies(geoids)
         assert len(result) == 2
+
+
+# =============================================================================
+# State Legislative District (SLD) Tests
+# =============================================================================
+
+class TestSLDSupport:
+    """Test State Legislative District (SLD) support.
+
+    SLDs come in two types:
+    - SLDU: Upper chamber (State Senate)
+    - SLDL: Lower chamber (State House/Assembly)
+
+    Nebraska has unicameral legislature, so only SLDU.
+    """
+
+    @pytest.fixture
+    def data_path(self):
+        return Path(__file__).parent.parent / "data" / "block_probabilities.parquet"
+
+    @pytest.fixture
+    def geo(self, data_path):
+        """BlockGeography instance with data."""
+        if not data_path.exists():
+            pytest.skip("Block probabilities data not available")
+        return BlockGeography(data_path, lazy_load=False)
+
+    def test_block_data_has_sld_columns(self, geo):
+        """Block data includes SLDU and SLDL columns."""
+        assert "sldu_id" in geo.data.columns, "Missing sldu_id column"
+        assert "sldl_id" in geo.data.columns, "Missing sldl_id column"
+
+    def test_sldu_id_format(self, geo):
+        """SLDU IDs follow format: STATE-SLDU-XXX."""
+        sample_sldu = geo.data["sldu_id"].dropna().iloc[0]
+        assert "-SLDU-" in sample_sldu, f"Invalid SLDU format: {sample_sldu}"
+        # Format: XX-SLDU-YYY where XX is state abbrev
+        parts = sample_sldu.split("-")
+        assert len(parts) == 3
+        assert len(parts[0]) == 2  # State abbreviation
+
+    def test_sldl_id_format(self, geo):
+        """SLDL IDs follow format: STATE-SLDL-XXX."""
+        # Skip if no SLDL data (e.g., Nebraska is unicameral)
+        sldl_data = geo.data["sldl_id"].dropna()
+        if len(sldl_data) == 0:
+            pytest.skip("No SLDL data available")
+        sample_sldl = sldl_data.iloc[0]
+        assert "-SLDL-" in sample_sldl, f"Invalid SLDL format: {sample_sldl}"
+        parts = sample_sldl.split("-")
+        assert len(parts) == 3
+        assert len(parts[0]) == 2  # State abbreviation
+
+    def test_get_sldu(self, geo):
+        """Can lookup SLDU for a block."""
+        sample_block = geo.data[geo.data["sldu_id"].notna()]["geoid"].iloc[0]
+        result = geo.get_sldu(sample_block)
+        assert result is not None
+        assert "-SLDU-" in result
+
+    def test_get_sldl(self, geo):
+        """Can lookup SLDL for a block."""
+        sldl_blocks = geo.data[geo.data["sldl_id"].notna()]
+        if len(sldl_blocks) == 0:
+            pytest.skip("No SLDL data available")
+        sample_block = sldl_blocks["geoid"].iloc[0]
+        result = geo.get_sldl(sample_block)
+        assert result is not None
+        assert "-SLDL-" in result
+
+    def test_get_sld_unknown_block(self, geo):
+        """Unknown block returns None for SLD."""
+        assert geo.get_sldu("000000000000000") is None
+        assert geo.get_sldl("000000000000000") is None
+
+    def test_get_all_geographies_includes_sld(self, geo):
+        """get_all_geographies includes SLD columns."""
+        sample_block = geo.data[geo.data["sldu_id"].notna()]["geoid"].iloc[0]
+        result = geo.get_all_geographies(sample_block)
+        assert "sldu_id" in result
+        assert "sldl_id" in result
+
+    def test_get_blocks_in_sldu(self, geo):
+        """Get all blocks in a state senate district."""
+        sample_sldu = geo.data["sldu_id"].dropna().iloc[0]
+        blocks = geo.get_blocks_in_sldu(sample_sldu)
+        assert len(blocks) > 0
+        assert all(blocks["sldu_id"] == sample_sldu)
+
+    def test_get_blocks_in_sldl(self, geo):
+        """Get all blocks in a state house district."""
+        sldl_data = geo.data["sldl_id"].dropna()
+        if len(sldl_data) == 0:
+            pytest.skip("No SLDL data available")
+        sample_sldl = sldl_data.iloc[0]
+        blocks = geo.get_blocks_in_sldl(sample_sldl)
+        assert len(blocks) > 0
+        assert all(blocks["sldl_id"] == sample_sldl)
+
+    def test_sldu_count_reasonable(self, geo):
+        """Total SLDU districts should be ~2000 (50 states * ~40 each)."""
+        n_sldu = geo.data["sldu_id"].dropna().nunique()
+        # Should be between 1000 and 3000 (varies by state senate size)
+        assert 1000 < n_sldu < 3000, f"Unexpected SLDU count: {n_sldu}"
+
+    def test_sldl_count_reasonable(self, geo):
+        """Total SLDL districts should be ~5000 (varies widely by state)."""
+        sldl_unique = geo.data["sldl_id"].dropna().nunique()
+        # Nebraska is unicameral, so might have 0 SLDL for some states
+        # Total should be between 3000 and 10000
+        if sldl_unique > 0:
+            assert 3000 < sldl_unique < 10000, f"Unexpected SLDL count: {sldl_unique}"
+
+    def test_derive_with_sld(self, data_path):
+        """derive_geographies can include SLD columns."""
+        if not data_path.exists():
+            pytest.skip("Block probabilities data not available")
+
+        block_data = load_block_probabilities(data_path)
+        sample_geoid = block_data[block_data["sldu_id"].notna()]["geoid"].iloc[0]
+
+        result = derive_geographies(
+            [sample_geoid],
+            include_cd=True,
+            include_sld=True,
+            block_data=block_data
+        )
+
+        assert "sldu_id" in result.columns
+        assert "sldl_id" in result.columns

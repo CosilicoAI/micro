@@ -10,7 +10,7 @@ import pandas as pd
 from pathlib import Path
 
 from microplex.hierarchical import HierarchicalSynthesizer, HouseholdSchema
-from microplex.geography import BlockGeography, load_block_probabilities
+from microplex.geography import BlockGeography, load_block_probabilities, derive_geographies
 
 
 # =============================================================================
@@ -105,8 +105,8 @@ class TestBlockAssignmentIntegration:
         assert "block_geoid" in syn_hh.columns
         assert all(syn_hh["block_geoid"].str.len() == 15)
 
-    def test_generate_includes_derived_geographies(self, sample_cps_data, block_probabilities):
-        """Generated data includes tract, county, and CD from block."""
+    def test_derive_geographies_post_hoc(self, sample_cps_data, block_probabilities):
+        """Parent geographies can be derived from block_geoid post-hoc."""
         hh, persons = sample_cps_data
 
         schema = HouseholdSchema(
@@ -123,14 +123,28 @@ class TestBlockAssignmentIntegration:
         synth.fit(hh, persons, hh_weight_col="hh_weight", epochs=5, verbose=False)
         syn_hh, syn_persons = synth.generate(n_households=50, verbose=False)
 
+        # Synthesizer only sets block_geoid
+        assert "block_geoid" in syn_hh.columns
+        assert "tract_geoid" not in syn_hh.columns  # Not set during synthesis
+
+        # Derive parent geographies post-hoc
+        geos = derive_geographies(
+            syn_hh["block_geoid"],
+            include_cd=True,
+            include_sld=True,
+            block_data=block_probabilities
+        )
+
         # Check derived columns exist
-        assert "tract_geoid" in syn_hh.columns
-        assert "county_fips" in syn_hh.columns
-        assert "cd_id" in syn_hh.columns
+        assert "tract_geoid" in geos.columns
+        assert "county_fips" in geos.columns
+        assert "cd_id" in geos.columns
+        assert "sldu_id" in geos.columns
+        assert "sldl_id" in geos.columns
 
         # Check lengths
-        assert all(syn_hh["tract_geoid"].str.len() == 11)
-        assert all(syn_hh["county_fips"].str.len() == 5)
+        assert all(geos["tract_geoid"].str.len() == 11)
+        assert all(geos["county_fips"].str.len() == 5)
 
     def test_block_assignment_respects_state(self, sample_cps_data, block_probabilities):
         """Assigned blocks are in valid states and consistent with state_fips."""
@@ -162,7 +176,7 @@ class TestBlockAssignmentIntegration:
         assert all(block_states.isin(valid_states))
 
     def test_cd_derived_from_block(self, sample_cps_data, block_probabilities):
-        """CD is correctly derived from block lookup."""
+        """CD is correctly derived from block lookup post-hoc."""
         hh, persons = sample_cps_data
 
         schema = HouseholdSchema(
@@ -179,9 +193,16 @@ class TestBlockAssignmentIntegration:
         synth.fit(hh, persons, hh_weight_col="hh_weight", epochs=5, verbose=False)
         syn_hh, _ = synth.generate(n_households=50, verbose=False)
 
+        # Derive CD post-hoc
+        geos = derive_geographies(
+            syn_hh["block_geoid"],
+            include_cd=True,
+            block_data=block_probabilities
+        )
+
         # CD should be in proper format (e.g., CA-12, TX-AL)
         cd_pattern = r"^[A-Z]{2}-(\d{2}|AL)$"
-        valid_cds = syn_hh["cd_id"].str.match(cd_pattern, na=False)
+        valid_cds = geos["cd_id"].str.match(cd_pattern, na=False)
         assert valid_cds.sum() > 0
 
 
@@ -227,7 +248,7 @@ class TestBlockCalibrationIntegration:
     """Test calibration with block-level geography."""
 
     def test_cd_indicators_can_be_built(self, sample_cps_data, block_probabilities):
-        """CD indicator columns can be built for calibration."""
+        """CD indicator columns can be built for calibration (post-hoc derivation)."""
         hh, persons = sample_cps_data
 
         schema = HouseholdSchema(
@@ -243,6 +264,14 @@ class TestBlockCalibrationIntegration:
 
         synth.fit(hh, persons, hh_weight_col="hh_weight", epochs=5, verbose=False)
         syn_hh, _ = synth.generate(n_households=100, verbose=False)
+
+        # Derive CD post-hoc (this is part of the pipeline before calibration)
+        geos = derive_geographies(
+            syn_hh["block_geoid"],
+            include_cd=True,
+            block_data=block_probabilities
+        )
+        syn_hh["cd_id"] = geos["cd_id"].values
 
         # Build CD indicators
         for cd_id in syn_hh["cd_id"].dropna().unique():

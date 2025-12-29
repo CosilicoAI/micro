@@ -137,12 +137,13 @@ class HierarchicalSynthesizer:
     def _build_block_lookup(self, block_probs: pd.DataFrame) -> None:
         """Build lookup dict for fast block assignment by state.
 
-        Precomputes block geoids, probabilities, tract_geoids, county_fips,
-        and cd_ids for each state for vectorized random selection.
+        Precomputes block geoids and probabilities for each state.
+        Only stores minimal data needed for block assignment - all parent
+        geographies (tract, county, CD, SLD) should be derived post-hoc
+        using BlockGeography.
 
         Args:
-            block_probs: DataFrame with columns: geoid, state_fips, prob, cd_id,
-                tract_geoid (optional - derived from geoid if missing)
+            block_probs: DataFrame with columns: geoid, state_fips, prob
         """
         self._block_lookup = {}
 
@@ -157,38 +158,23 @@ class HierarchicalSynthesizer:
             probs = state_blocks['prob'].values
             probs = probs / probs.sum()
 
-            # Get tract_geoid - first 11 chars of block geoid
-            # geoid format: SSCCCTTTTTTBBBB (state, county, tract, block)
-            geoids = state_blocks['geoid'].values
-
-            # Get tract_geoid from column or derive from geoid
-            if 'tract_geoid' in state_blocks.columns:
-                tract_geoids = state_blocks['tract_geoid'].values
-            else:
-                tract_geoids = np.array([g[:11] for g in geoids])
-
-            # County FIPS is first 5 chars of block geoid (state + county)
-            county_fips = np.array([g[:5] for g in geoids])
-
             self._block_lookup[state_fips] = {
-                'geoids': geoids,
+                'geoids': state_blocks['geoid'].values,
                 'probs': probs,
-                'tract_geoids': tract_geoids,
-                'county_fips': county_fips,
-                'cd_ids': state_blocks['cd_id'].values,
             }
 
     def _assign_blocks(self, hh: pd.DataFrame) -> pd.DataFrame:
         """Assign census blocks to households based on state.
 
         Uses pseudorandom assignment weighted by block population shares.
-        Derives tract_geoid, county_fips, and cd_id from the assigned block.
+        Only assigns block_geoid - all parent geographies should be derived
+        post-hoc using BlockGeography or derive_geographies().
 
         Args:
             hh: Household DataFrame with state_fips column
 
         Returns:
-            DataFrame with block_geoid, tract_geoid, county_fips, cd_id added
+            DataFrame with block_geoid added
         """
         if self._block_lookup is None:
             return hh
@@ -202,11 +188,8 @@ class HierarchicalSynthesizer:
         # Convert state_fips to string for lookup
         state_fips_values = hh['state_fips'].values
 
-        # Vectorized block assignment
+        # Block assignment
         block_geoids = []
-        tract_geoids = []
-        county_fips_list = []
-        cd_ids = []
         fixed_state_fips = []
 
         for state_fips in state_fips_values:
@@ -226,15 +209,9 @@ class HierarchicalSynthesizer:
             idx = rng.choice(len(lookup['geoids']), p=lookup['probs'])
 
             block_geoids.append(lookup['geoids'][idx])
-            tract_geoids.append(lookup['tract_geoids'][idx])
-            county_fips_list.append(lookup['county_fips'][idx])
-            cd_ids.append(lookup['cd_ids'][idx])
             fixed_state_fips.append(int(state_fips_str))
 
         hh['block_geoid'] = block_geoids
-        hh['tract_geoid'] = tract_geoids
-        hh['county_fips'] = county_fips_list
-        hh['cd_id'] = cd_ids
         hh['state_fips'] = fixed_state_fips
 
         return hh
@@ -417,7 +394,8 @@ class HierarchicalSynthesizer:
                 )
 
         # Assign geographic identifiers based on state
-        # Prefer block assignment if available (derives tract, county, CD)
+        # Block assignment only sets block_geoid - parent geographies (tract, county, CD, SLD)
+        # should be derived post-hoc using BlockGeography or derive_geographies()
         if self._block_lookup is not None:
             if verbose:
                 print("Assigning census blocks...")
@@ -426,9 +404,7 @@ class HierarchicalSynthesizer:
             if verbose:
                 print(f"  Assigned blocks to {n_with_block:,} households ({n_with_block/n_households:.1%})")
                 n_unique_blocks = synthetic_hh['block_geoid'].nunique()
-                n_unique_tracts = synthetic_hh['tract_geoid'].nunique()
-                n_unique_cds = synthetic_hh['cd_id'].nunique()
-                print(f"  Unique blocks: {n_unique_blocks:,}, tracts: {n_unique_tracts:,}, CDs: {n_unique_cds:,}")
+                print(f"  Unique blocks: {n_unique_blocks:,}")
         elif self._cd_lookup is not None:
             if verbose:
                 print("Assigning congressional districts...")

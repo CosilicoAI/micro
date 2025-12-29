@@ -160,6 +160,84 @@ def fetch_block_to_cd_crosswalk() -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def fetch_tract_to_sld_crosswalk() -> pd.DataFrame:
+    """Fetch tract-to-SLD (State Legislative District) assignments from Census.
+
+    Returns crosswalk for both upper (state senate) and lower (state house) chambers.
+    Uses 2024 SLD boundaries.
+
+    Note: Tracts can be split across multiple SLDs. We assign each tract to the
+    SLD that contains the largest area of that tract (AREALAND_PART column).
+    """
+    print("Fetching tract-to-SLD crosswalks...")
+
+    result_dfs = []
+
+    # State Senate (Upper chamber) - SLDU
+    url_upper = "https://www2.census.gov/geo/docs/maps-data/data/rel2020/cd-sld/tab20_sldu202420_tract20_natl.txt"
+    try:
+        df = pd.read_csv(url_upper, delimiter='|', dtype=str)
+        print(f"  Got {len(df)} tract-to-SLDU mappings")
+
+        df['tract_geoid'] = df['GEOID_TRACT_20']
+        df['state_fips'] = df['GEOID_TRACT_20'].str[:2]
+        df['sldu'] = df['GEOID_SLDU2024_20'].str[2:]  # District number after state
+        df['area'] = pd.to_numeric(df['AREALAND_PART'], errors='coerce')
+
+        # Create SLD identifier: STATE-SLDU-XXX
+        df['state_abbrev'] = df['state_fips'].map(FIPS_TO_STATE)
+        df['sldu_id'] = df['state_abbrev'] + '-SLDU-' + df['sldu']
+
+        # For tracts in multiple SLDs, keep only the SLD with the most area
+        df = df.sort_values('area', ascending=False)
+        df = df.drop_duplicates('tract_geoid', keep='first')
+        print(f"    Deduplicated to {len(df)} unique tracts")
+
+        result_dfs.append(df[['tract_geoid', 'sldu_id', 'state_fips']])
+
+    except Exception as e:
+        print(f"  Error fetching SLDU: {e}")
+
+    # State House (Lower chamber) - SLDL
+    url_lower = "https://www2.census.gov/geo/docs/maps-data/data/rel2020/cd-sld/tab20_sldl202420_tract20_natl.txt"
+    try:
+        df = pd.read_csv(url_lower, delimiter='|', dtype=str)
+        print(f"  Got {len(df)} tract-to-SLDL mappings")
+
+        df['tract_geoid'] = df['GEOID_TRACT_20']
+        df['state_fips'] = df['GEOID_TRACT_20'].str[:2]
+        df['sldl'] = df['GEOID_SLDL2024_20'].str[2:]  # District number after state
+        df['area'] = pd.to_numeric(df['AREALAND_PART'], errors='coerce')
+
+        # Create SLD identifier: STATE-SLDL-XXX
+        df['state_abbrev'] = df['state_fips'].map(FIPS_TO_STATE)
+        df['sldl_id'] = df['state_abbrev'] + '-SLDL-' + df['sldl']
+
+        # For tracts in multiple SLDs, keep only the SLD with the most area
+        df = df.sort_values('area', ascending=False)
+        df = df.drop_duplicates('tract_geoid', keep='first')
+        print(f"    Deduplicated to {len(df)} unique tracts")
+
+        result_dfs.append(df[['tract_geoid', 'sldl_id', 'state_fips']])
+
+    except Exception as e:
+        print(f"  Error fetching SLDL: {e}")
+
+    if len(result_dfs) == 2:
+        # Merge upper and lower on tract
+        merged = result_dfs[0].merge(
+            result_dfs[1][['tract_geoid', 'sldl_id']],
+            on='tract_geoid',
+            how='outer'
+        )
+        return merged
+
+    elif len(result_dfs) == 1:
+        return result_dfs[0]
+
+    return pd.DataFrame()
+
+
 def build_block_probabilities(blocks: pd.DataFrame) -> pd.DataFrame:
     """Build probability distribution for block sampling.
 
@@ -309,22 +387,58 @@ def main():
     print(f"  Total population: {blocks['population'].sum():,}")
     print(f"  States: {blocks['state_fips'].nunique()}")
 
-    # Fetch tract-to-CD crosswalk
-    tract_cd = fetch_block_to_cd_crosswalk()
+    # Fetch tract-to-CD crosswalk (skip if already present)
+    if 'cd_id' not in blocks.columns:
+        tract_cd = fetch_block_to_cd_crosswalk()
 
-    if len(tract_cd) > 0:
-        # Add CD to blocks via tract
-        blocks['tract_geoid'] = blocks['geoid'].str[:11]
-        blocks = blocks.merge(tract_cd[['tract_geoid', 'cd_id']], on='tract_geoid', how='left')
+        if len(tract_cd) > 0:
+            # Add CD to blocks via tract
+            blocks['tract_geoid'] = blocks['geoid'].str[:11]
+            blocks = blocks.merge(tract_cd[['tract_geoid', 'cd_id']], on='tract_geoid', how='left')
 
-        # Fill missing CDs (some tracts might not have CD assignments)
-        missing_cd = blocks['cd_id'].isna().sum()
-        if missing_cd > 0:
-            print(f"  Blocks without CD assignment: {missing_cd:,}")
+            # Fill missing CDs (some tracts might not have CD assignments)
+            missing_cd = blocks['cd_id'].isna().sum()
+            if missing_cd > 0:
+                print(f"  Blocks without CD assignment: {missing_cd:,}")
+    else:
+        print("CD assignment already present in cached data")
 
-        # Save with CD back to arch
-        blocks.to_parquet(raw_blocks_path, index=False)
-        print(f"\nSaved blocks with CD assignments to {raw_blocks_path}")
+    # Fetch tract-to-SLD crosswalk (skip if already present)
+    need_sldu = 'sldu_id' not in blocks.columns
+    need_sldl = 'sldl_id' not in blocks.columns
+
+    if need_sldu or need_sldl:
+        tract_sld = fetch_tract_to_sld_crosswalk()
+
+        if len(tract_sld) > 0:
+            # Add SLD to blocks via tract
+            if 'tract_geoid' not in blocks.columns:
+                blocks['tract_geoid'] = blocks['geoid'].str[:11]
+
+            # Only merge columns we need
+            sld_cols = ['tract_geoid']
+            if need_sldu and 'sldu_id' in tract_sld.columns:
+                sld_cols.append('sldu_id')
+            if need_sldl and 'sldl_id' in tract_sld.columns:
+                sld_cols.append('sldl_id')
+
+            if len(sld_cols) > 1:  # More than just tract_geoid
+                blocks = blocks.merge(tract_sld[sld_cols], on='tract_geoid', how='left')
+
+                if 'sldu_id' in blocks.columns:
+                    missing_sldu = blocks['sldu_id'].isna().sum()
+                    if missing_sldu > 0:
+                        print(f"  Blocks without SLDU assignment: {missing_sldu:,}")
+                if 'sldl_id' in blocks.columns:
+                    missing_sldl = blocks['sldl_id'].isna().sum()
+                    if missing_sldl > 0:
+                        print(f"  Blocks without SLDL assignment: {missing_sldl:,}")
+    else:
+        print("SLD assignment already present in cached data")
+
+    # Save with CD and SLD back to arch
+    blocks.to_parquet(raw_blocks_path, index=False)
+    print(f"\nSaved blocks with CD/SLD assignments to {raw_blocks_path}")
 
     # Build probability lookup for efficient sampling
     print("\nBuilding block probability lookup...")
@@ -351,9 +465,13 @@ def main():
         state_abbrev = FIPS_TO_STATE.get(state_fips, state_fips)
         print(f"  {state_abbrev}: {row['geoid']:,} blocks, {row['population']:,} pop")
 
-    # Summary by CD
+    # Summary by legislative districts
     if 'cd_id' in blocks.columns:
         print(f"\nCDs covered: {blocks['cd_id'].dropna().nunique()}")
+    if 'sldu_id' in blocks.columns:
+        print(f"State Senate (SLDU) districts: {blocks['sldu_id'].dropna().nunique()}")
+    if 'sldl_id' in blocks.columns:
+        print(f"State House (SLDL) districts: {blocks['sldl_id'].dropna().nunique()}")
 
     print("\n" + "=" * 70)
     print("BLOCK GEOGRAPHY BUILD COMPLETE")

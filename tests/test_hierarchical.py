@@ -9,6 +9,7 @@ from microplex.hierarchical import (
     HouseholdSchema,
     prepare_cps_for_hierarchical,
 )
+from microplex.geography import derive_geographies
 
 
 def create_test_household_data(n_households: int = 100, seed: int = 42) -> tuple:
@@ -318,8 +319,11 @@ class TestBlockAssignment:
         assert synth._block_lookup is not None
         assert synth._cd_lookup is None
 
-    def test_assign_blocks_adds_columns(self, sample_block_probs):
-        """Test that block assignment adds expected columns."""
+    def test_assign_blocks_adds_block_geoid_only(self, sample_block_probs):
+        """Test that block assignment adds only block_geoid column.
+
+        Parent geographies (tract, county, CD, SLD) should be derived post-hoc.
+        """
         synth = HierarchicalSynthesizer(
             block_probabilities=sample_block_probs,
             random_state=42,
@@ -332,10 +336,13 @@ class TestBlockAssignment:
 
         result = synth._assign_blocks(test_hh)
 
+        # Only block_geoid is set during synthesis
         assert 'block_geoid' in result.columns
-        assert 'tract_geoid' in result.columns
-        assert 'county_fips' in result.columns
-        assert 'cd_id' in result.columns
+
+        # Parent geographies are NOT set during synthesis (derived post-hoc)
+        assert 'tract_geoid' not in result.columns
+        assert 'county_fips' not in result.columns
+        assert 'cd_id' not in result.columns
 
     def test_block_geoid_structure(self, sample_block_probs):
         """Test that block geoid structure is correct (15 chars)."""
@@ -353,20 +360,18 @@ class TestBlockAssignment:
 
         for _, row in result.iterrows():
             block_geoid = row['block_geoid']
-            tract_geoid = row['tract_geoid']
-            county_fips = row['county_fips']
 
             # Block GEOID should be 15 characters
             assert len(block_geoid) == 15
 
-            # Tract GEOID should be first 11 chars of block
-            assert tract_geoid == block_geoid[:11]
+            # Can derive tract (first 11) and county (first 5) from block
+            tract_geoid = block_geoid[:11]
+            county_fips = block_geoid[:5]
+            assert len(tract_geoid) == 11
+            assert len(county_fips) == 5
 
-            # County FIPS should be first 5 chars (state + county)
-            assert county_fips == block_geoid[:5]
-
-    def test_cd_id_from_block(self, sample_block_probs):
-        """Test that CD ID is derived from block assignment."""
+    def test_derive_geographies_from_block(self, sample_block_probs):
+        """Test that parent geographies can be derived post-hoc from block."""
         synth = HierarchicalSynthesizer(
             block_probabilities=sample_block_probs,
             random_state=42,
@@ -379,13 +384,20 @@ class TestBlockAssignment:
 
         result = synth._assign_blocks(test_hh)
 
-        # All CA blocks map to CA-01
-        ca_rows = result[result['state_fips'] == 6]
-        assert all(cd.startswith('CA-') for cd in ca_rows['cd_id'])
+        # Derive geographies post-hoc
+        geos = derive_geographies(
+            result['block_geoid'],
+            include_cd=True,
+            block_data=sample_block_probs
+        )
 
-        # All NY blocks map to NY-01
-        ny_rows = result[result['state_fips'] == 36]
-        assert all(cd.startswith('NY-') for cd in ny_rows['cd_id'])
+        # All CA blocks map to CA-XX CDs
+        ca_mask = geos['state_fips'] == '06'
+        assert all(cd.startswith('CA-') for cd in geos.loc[ca_mask, 'cd_id'])
+
+        # All NY blocks map to NY-XX CDs
+        ny_mask = geos['state_fips'] == '36'
+        assert all(cd.startswith('NY-') for cd in geos.loc[ny_mask, 'cd_id'])
 
     def test_state_fips_fixed_to_valid(self, sample_block_probs):
         """Test that state_fips values are fixed to valid integers."""
