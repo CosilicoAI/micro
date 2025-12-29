@@ -1,6 +1,6 @@
 # Calibration Method Comparison: IPF vs Gradient Descent
 
-**Date**: 2024-12-28
+**Date**: 2025-12-28
 **Authors**: Max Ghenis, Claude
 **Dataset**: CPS ASEC 2024 (98,902 tax filers)
 
@@ -134,12 +134,42 @@ All experiments used the calibration module at `src/microplex/calibration.py`:
 - `Calibrator(method="ipf")` for IPF
 - Custom GD implementation with PE-style loss
 
+## Experiment 5: Constraint-Aware Sampling
+
+**Setup**: Instead of L0/L1 regularization (which proved too aggressive), keep K samples per constraint.
+
+| K | Samples | Mean Error | Weight Range |
+|---|---------|------------|--------------|
+| 50 | 44,595 | 0.64% | 1,060x |
+| 20 | 19,992 | 0.64% | 320x |
+| 10 | 10,294 | 0.64% | 259x |
+| **5** | **5,235** | **0.64%** | 266x |
+| 3 | 3,177 | 1.22% | explodes |
+
+**Key finding**: ~4 samples per constraint is the minimum for stable calibration.
+
+## Experiment 6: Hierarchical Synthesis
+
+**Setup**: Two-level structure with household flow + person flow, dual-level calibration.
+
+| Level | Targets | Mean Error |
+|-------|---------|------------|
+| Household (districts) | 440 | 9.42% |
+| Person (age × state) | 918 | 3.65% |
+
+**Structure**:
+- 18,825 households with calibrated weights
+- 48,292 persons linked to households
+- Household weights apply to all persons within
+
+**Key finding**: Hierarchical calibration is more challenging than flat calibration because person-level targets must be achieved through household-level weights.
+
 ## Future Work
 
 1. **Automatic feasibility detection**: Detect when constraints are likely infeasible
 2. **Hybrid IPF+GD**: Use IPF to warm-start, then GD to refine
 3. **Constraint weighting**: Allow different importance weights for different targets
-4. **L0 regularization**: True sparsity via Hard Concrete or similar
+4. **Improve hierarchical calibration**: Better algorithms for dual-level constraints
 
 ## References
 

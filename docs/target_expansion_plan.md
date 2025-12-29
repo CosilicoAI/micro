@@ -193,7 +193,18 @@ With constraint-aware sampling (K samples per constraint):
 **Key finding**: ~4 samples per constraint is the minimum for stable calibration.
 With 1,354 constraints (districts + state×age), we need ~5k households.
 
-Output: `data/microplex_5k.parquet` (112 KB, 10 columns)
+Output: Hierarchical structure in Supabase (`microplex.households`, `microplex.persons`)
+
+## Current Output
+
+| Table | Records | Storage |
+|-------|---------|---------|
+| `microplex.households` | 18,825 | Supabase |
+| `microplex.persons` | 48,292 | Supabase |
+
+Calibration accuracy:
+- District targets: 9.42% mean error
+- Age × state targets: 3.65% mean error
 
 ## Notes
 
