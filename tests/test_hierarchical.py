@@ -254,6 +254,159 @@ class TestPrepareCpsForHierarchical:
         assert len(person_data) == 6
 
 
+class TestBlockAssignment:
+    """Tests for block-level geographic assignment."""
+
+    @pytest.fixture
+    def sample_block_probs(self):
+        """Create sample block probabilities for testing."""
+        return pd.DataFrame({
+            'geoid': [
+                '060010201001000', '060010201001001', '060010201001002',  # CA
+                '360590101001000', '360590101001001',  # NY
+                '480010101001000', '480010101001001', '480010101001002',  # TX
+            ],
+            'state_fips': ['06', '06', '06', '36', '36', '48', '48', '48'],
+            'county': ['001', '001', '001', '059', '059', '001', '001', '001'],
+            'tract': ['020100', '020100', '020100', '010100', '010100', '010100', '010100', '010100'],
+            'block': ['1000', '1001', '1002', '1000', '1001', '1000', '1001', '1002'],
+            'population': [100, 200, 100, 300, 200, 150, 250, 100],
+            'tract_geoid': [
+                '06001020100', '06001020100', '06001020100',
+                '36059010100', '36059010100',
+                '48001010100', '48001010100', '48001010100',
+            ],
+            'cd_id': ['CA-01', 'CA-01', 'CA-01', 'NY-01', 'NY-01', 'TX-01', 'TX-01', 'TX-01'],
+            'prob': [0.25, 0.50, 0.25, 0.6, 0.4, 0.3, 0.5, 0.2],  # Within-state probs
+        })
+
+    @pytest.fixture
+    def sample_cd_probs(self):
+        """Create sample CD probabilities for backward compatibility testing."""
+        return pd.DataFrame({
+            'state_fips': [6, 6, 36, 36, 48, 48],
+            'cd_id': ['CA-01', 'CA-02', 'NY-01', 'NY-02', 'TX-01', 'TX-02'],
+            'prob': [0.6, 0.4, 0.5, 0.5, 0.7, 0.3],
+        })
+
+    def test_init_with_block_probabilities(self, sample_block_probs):
+        """Test synthesizer initializes with block probabilities."""
+        synth = HierarchicalSynthesizer(block_probabilities=sample_block_probs)
+
+        assert synth._block_lookup is not None
+        assert synth._cd_lookup is None
+        assert '06' in synth._block_lookup
+        assert '36' in synth._block_lookup
+        assert '48' in synth._block_lookup
+
+    def test_init_with_cd_probabilities_backward_compat(self, sample_cd_probs):
+        """Test synthesizer initializes with CD probabilities (backward compat)."""
+        synth = HierarchicalSynthesizer(cd_probabilities=sample_cd_probs)
+
+        assert synth._cd_lookup is not None
+        assert synth._block_lookup is None
+        assert 6 in synth._cd_lookup
+        assert 36 in synth._cd_lookup
+
+    def test_block_probabilities_take_precedence(self, sample_block_probs, sample_cd_probs):
+        """Test that block probabilities take precedence over CD probabilities."""
+        synth = HierarchicalSynthesizer(
+            cd_probabilities=sample_cd_probs,
+            block_probabilities=sample_block_probs,
+        )
+
+        assert synth._block_lookup is not None
+        assert synth._cd_lookup is None
+
+    def test_assign_blocks_adds_columns(self, sample_block_probs):
+        """Test that block assignment adds expected columns."""
+        synth = HierarchicalSynthesizer(
+            block_probabilities=sample_block_probs,
+            random_state=42,
+        )
+
+        test_hh = pd.DataFrame({
+            'state_fips': [6, 36, 48],
+            'n_persons': [3, 2, 4],
+        })
+
+        result = synth._assign_blocks(test_hh)
+
+        assert 'block_geoid' in result.columns
+        assert 'tract_geoid' in result.columns
+        assert 'county_fips' in result.columns
+        assert 'cd_id' in result.columns
+
+    def test_block_geoid_structure(self, sample_block_probs):
+        """Test that block geoid structure is correct (15 chars)."""
+        synth = HierarchicalSynthesizer(
+            block_probabilities=sample_block_probs,
+            random_state=42,
+        )
+
+        test_hh = pd.DataFrame({
+            'state_fips': [6, 36, 48],
+            'n_persons': [3, 2, 4],
+        })
+
+        result = synth._assign_blocks(test_hh)
+
+        for _, row in result.iterrows():
+            block_geoid = row['block_geoid']
+            tract_geoid = row['tract_geoid']
+            county_fips = row['county_fips']
+
+            # Block GEOID should be 15 characters
+            assert len(block_geoid) == 15
+
+            # Tract GEOID should be first 11 chars of block
+            assert tract_geoid == block_geoid[:11]
+
+            # County FIPS should be first 5 chars (state + county)
+            assert county_fips == block_geoid[:5]
+
+    def test_cd_id_from_block(self, sample_block_probs):
+        """Test that CD ID is derived from block assignment."""
+        synth = HierarchicalSynthesizer(
+            block_probabilities=sample_block_probs,
+            random_state=42,
+        )
+
+        test_hh = pd.DataFrame({
+            'state_fips': [6, 36, 48],
+            'n_persons': [3, 2, 4],
+        })
+
+        result = synth._assign_blocks(test_hh)
+
+        # All CA blocks map to CA-01
+        ca_rows = result[result['state_fips'] == 6]
+        assert all(cd.startswith('CA-') for cd in ca_rows['cd_id'])
+
+        # All NY blocks map to NY-01
+        ny_rows = result[result['state_fips'] == 36]
+        assert all(cd.startswith('NY-') for cd in ny_rows['cd_id'])
+
+    def test_state_fips_fixed_to_valid(self, sample_block_probs):
+        """Test that state_fips values are fixed to valid integers."""
+        synth = HierarchicalSynthesizer(
+            block_probabilities=sample_block_probs,
+            random_state=42,
+        )
+
+        # Include a state_fips value that needs rounding/fixing
+        test_hh = pd.DataFrame({
+            'state_fips': [6.3, 36.7, 47.9],  # 47.9 should map to 48
+            'n_persons': [3, 2, 4],
+        })
+
+        result = synth._assign_blocks(test_hh)
+
+        assert result['state_fips'].iloc[0] == 6
+        assert result['state_fips'].iloc[1] == 36
+        assert result['state_fips'].iloc[2] == 48
+
+
 class TestTaxUnitOptimizer:
     """Tests for TaxUnitOptimizer."""
 

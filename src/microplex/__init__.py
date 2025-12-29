@@ -59,6 +59,15 @@ from microplex.cps_synthetic import (
     CPSSyntheticGenerator,
     validate_synthetic,
 )
+from microplex.geography import (
+    BlockGeography,
+    load_block_probabilities,
+    derive_geographies,
+    STATE_LEN,
+    COUNTY_LEN,
+    TRACT_LEN,
+    BLOCK_LEN,
+)
 from microplex.transitions import (
     Mortality,
     DisabilityOnset,
@@ -100,6 +109,14 @@ __all__ = [
     "load_cps_for_synthesis",
     "create_sample_data",
     "get_data_info",
+    # Geography
+    "BlockGeography",
+    "load_block_probabilities",
+    "derive_geographies",
+    "STATE_LEN",
+    "COUNTY_LEN",
+    "TRACT_LEN",
+    "BLOCK_LEN",
     # Transforms
     "ZeroInflatedTransform",
     "LogTransform",

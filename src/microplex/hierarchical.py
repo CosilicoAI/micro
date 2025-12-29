@@ -78,6 +78,7 @@ class HierarchicalSynthesizer:
         person_flow_kwargs: Optional[Dict] = None,
         random_state: Optional[int] = None,
         cd_probabilities: Optional[pd.DataFrame] = None,
+        block_probabilities: Optional[pd.DataFrame] = None,
     ):
         """
         Initialize hierarchical synthesizer.
@@ -88,13 +89,19 @@ class HierarchicalSynthesizer:
             person_flow_kwargs: Kwargs passed to person-level Synthesizer
             random_state: Random seed for reproducibility
             cd_probabilities: DataFrame with state_fips, cd_id, prob columns
-                for assigning congressional districts during synthesis
+                for assigning congressional districts during synthesis.
+                Ignored if block_probabilities is provided.
+            block_probabilities: DataFrame with geoid, state_fips, prob, cd_id
+                columns for assigning census blocks during synthesis. When
+                provided, tract_geoid, county_fips, and cd_id are derived
+                from the assigned block.
         """
         self.schema = schema or HouseholdSchema()
         self.hh_flow_kwargs = hh_flow_kwargs or {}
         self.person_flow_kwargs = person_flow_kwargs or {}
         self.random_state = random_state
         self.cd_probabilities = cd_probabilities
+        self.block_probabilities = block_probabilities
 
         self.hh_synthesizer: Optional[Synthesizer] = None
         self.person_synthesizer: Optional[Synthesizer] = None
@@ -103,9 +110,14 @@ class HierarchicalSynthesizer:
         self._person_data: Optional[pd.DataFrame] = None
         self._is_fitted = False
 
-        # Precompute CD lookup for fast assignment
+        # Precompute lookups for fast assignment
         self._cd_lookup: Optional[Dict] = None
-        if cd_probabilities is not None:
+        self._block_lookup: Optional[Dict] = None
+
+        # Prefer block probabilities if provided
+        if block_probabilities is not None:
+            self._build_block_lookup(block_probabilities)
+        elif cd_probabilities is not None:
             self._build_cd_lookup(cd_probabilities)
 
     def _build_cd_lookup(self, cd_probs: pd.DataFrame) -> None:
@@ -121,6 +133,111 @@ class HierarchicalSynthesizer:
                 'cd_ids': state_cds['cd_id'].values,
                 'probs': state_cds['prob'].values,
             }
+
+    def _build_block_lookup(self, block_probs: pd.DataFrame) -> None:
+        """Build lookup dict for fast block assignment by state.
+
+        Precomputes block geoids, probabilities, tract_geoids, county_fips,
+        and cd_ids for each state for vectorized random selection.
+
+        Args:
+            block_probs: DataFrame with columns: geoid, state_fips, prob, cd_id,
+                tract_geoid (optional - derived from geoid if missing)
+        """
+        self._block_lookup = {}
+
+        # Ensure state_fips is string for consistent handling
+        block_probs = block_probs.copy()
+        block_probs['state_fips'] = block_probs['state_fips'].astype(str)
+
+        for state_fips in block_probs['state_fips'].unique():
+            state_blocks = block_probs[block_probs['state_fips'] == state_fips]
+
+            # Normalize probabilities within state (should already sum to 1)
+            probs = state_blocks['prob'].values
+            probs = probs / probs.sum()
+
+            # Get tract_geoid - first 11 chars of block geoid
+            # geoid format: SSCCCTTTTTTBBBB (state, county, tract, block)
+            geoids = state_blocks['geoid'].values
+
+            # Get tract_geoid from column or derive from geoid
+            if 'tract_geoid' in state_blocks.columns:
+                tract_geoids = state_blocks['tract_geoid'].values
+            else:
+                tract_geoids = np.array([g[:11] for g in geoids])
+
+            # County FIPS is first 5 chars of block geoid (state + county)
+            county_fips = np.array([g[:5] for g in geoids])
+
+            self._block_lookup[state_fips] = {
+                'geoids': geoids,
+                'probs': probs,
+                'tract_geoids': tract_geoids,
+                'county_fips': county_fips,
+                'cd_ids': state_blocks['cd_id'].values,
+            }
+
+    def _assign_blocks(self, hh: pd.DataFrame) -> pd.DataFrame:
+        """Assign census blocks to households based on state.
+
+        Uses pseudorandom assignment weighted by block population shares.
+        Derives tract_geoid, county_fips, and cd_id from the assigned block.
+
+        Args:
+            hh: Household DataFrame with state_fips column
+
+        Returns:
+            DataFrame with block_geoid, tract_geoid, county_fips, cd_id added
+        """
+        if self._block_lookup is None:
+            return hh
+
+        hh = hh.copy()
+        rng = np.random.default_rng(self.random_state)
+
+        # Get valid state FIPS codes (as strings)
+        valid_fips = np.array(list(self._block_lookup.keys()))
+
+        # Convert state_fips to string for lookup
+        state_fips_values = hh['state_fips'].values
+
+        # Vectorized block assignment
+        block_geoids = []
+        tract_geoids = []
+        county_fips_list = []
+        cd_ids = []
+        fixed_state_fips = []
+
+        for state_fips in state_fips_values:
+            # Convert to padded string (e.g., 6 -> "06")
+            state_fips_str = str(int(round(state_fips))).zfill(2)
+
+            # If not valid, find nearest valid FIPS
+            if state_fips_str not in self._block_lookup:
+                # Find closest valid state FIPS by numeric distance
+                valid_int = np.array([int(f) for f in valid_fips])
+                diffs = np.abs(valid_int - int(state_fips_str))
+                state_fips_str = valid_fips[np.argmin(diffs)]
+
+            lookup = self._block_lookup[state_fips_str]
+
+            # Random weighted selection of block
+            idx = rng.choice(len(lookup['geoids']), p=lookup['probs'])
+
+            block_geoids.append(lookup['geoids'][idx])
+            tract_geoids.append(lookup['tract_geoids'][idx])
+            county_fips_list.append(lookup['county_fips'][idx])
+            cd_ids.append(lookup['cd_ids'][idx])
+            fixed_state_fips.append(int(state_fips_str))
+
+        hh['block_geoid'] = block_geoids
+        hh['tract_geoid'] = tract_geoids
+        hh['county_fips'] = county_fips_list
+        hh['cd_id'] = cd_ids
+        hh['state_fips'] = fixed_state_fips
+
+        return hh
 
     def _assign_cds(self, hh: pd.DataFrame) -> pd.DataFrame:
         """Assign congressional districts to households based on state.
@@ -299,8 +416,20 @@ class HierarchicalSynthesizer:
                     np.round(synthetic_hh[col]).astype(int), 1, 20
                 )
 
-        # Assign congressional districts based on state
-        if self._cd_lookup is not None:
+        # Assign geographic identifiers based on state
+        # Prefer block assignment if available (derives tract, county, CD)
+        if self._block_lookup is not None:
+            if verbose:
+                print("Assigning census blocks...")
+            synthetic_hh = self._assign_blocks(synthetic_hh)
+            n_with_block = synthetic_hh['block_geoid'].notna().sum()
+            if verbose:
+                print(f"  Assigned blocks to {n_with_block:,} households ({n_with_block/n_households:.1%})")
+                n_unique_blocks = synthetic_hh['block_geoid'].nunique()
+                n_unique_tracts = synthetic_hh['tract_geoid'].nunique()
+                n_unique_cds = synthetic_hh['cd_id'].nunique()
+                print(f"  Unique blocks: {n_unique_blocks:,}, tracts: {n_unique_tracts:,}, CDs: {n_unique_cds:,}")
+        elif self._cd_lookup is not None:
             if verbose:
                 print("Assigning congressional districts...")
             synthetic_hh = self._assign_cds(synthetic_hh)
