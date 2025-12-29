@@ -4,11 +4,12 @@ Tracking microplex calibration target coverage vs PolicyEngine-US.
 
 ## Summary
 
-| Metric | Microplex | PolicyEngine | Gap |
-|--------|-----------|--------------|-----|
-| **Total Targets** | 1,764 | 1,661 | +103 |
-| **National** | 1,764 | 30 | +1,734 |
-| **State-level** | 51 | 1,631 | -1,580 |
+| Metric | Microplex | PolicyEngine | Notes |
+|--------|-----------|--------------|-------|
+| **Total Targets** | 7,291 | 1,661 | Microplex has more geographic detail |
+| **Geographic** | 7,254 | 52 | CDs, SLDs vs just states |
+| **Income/Benefits** | 22 | 30 | Similar coverage |
+| **Health/Tax** | 15 | 1,579 | PE has state-level Medicaid/CHIP |
 
 ## ✅ Working Calibration (2024-12-29)
 
@@ -48,11 +49,12 @@ These require income imputation (like PE's enhanced CPS) to fix.
 │                    MICROPLEX PE PARITY FRAMEWORK                     │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
-│  TargetRegistry (88 targets)                                       │
-│  ─────────────────────────────                                     │
-│  • State populations (51)     • Benefit programs (8)               │
-│  • IRS SOI income (14)        • Health insurance (7)               │
-│  • Tax aggregates (4)         • Demographics (4)                   │
+│  TargetRegistry (7,291 targets)                                    │
+│  ───────────────────────────────                                   │
+│  • State populations (51)     • SLDU populations (1,950)           │
+│  • CD populations (440)       • SLDL populations (4,813)           │
+│  • IRS SOI income (14)        • Benefit programs (8)               │
+│  • Health insurance (7)       • Tax/demographics (8)               │
 │                                                                     │
 │  CalibrationHarness                                                │
 │  ─────────────────────                                             │
