@@ -77,6 +77,7 @@ class HierarchicalSynthesizer:
         hh_flow_kwargs: Optional[Dict] = None,
         person_flow_kwargs: Optional[Dict] = None,
         random_state: Optional[int] = None,
+        cd_probabilities: Optional[pd.DataFrame] = None,
     ):
         """
         Initialize hierarchical synthesizer.
@@ -86,11 +87,14 @@ class HierarchicalSynthesizer:
             hh_flow_kwargs: Kwargs passed to household-level Synthesizer
             person_flow_kwargs: Kwargs passed to person-level Synthesizer
             random_state: Random seed for reproducibility
+            cd_probabilities: DataFrame with state_fips, cd_id, prob columns
+                for assigning congressional districts during synthesis
         """
         self.schema = schema or HouseholdSchema()
         self.hh_flow_kwargs = hh_flow_kwargs or {}
         self.person_flow_kwargs = person_flow_kwargs or {}
         self.random_state = random_state
+        self.cd_probabilities = cd_probabilities
 
         self.hh_synthesizer: Optional[Synthesizer] = None
         self.person_synthesizer: Optional[Synthesizer] = None
@@ -98,6 +102,75 @@ class HierarchicalSynthesizer:
         self._hh_data: Optional[pd.DataFrame] = None
         self._person_data: Optional[pd.DataFrame] = None
         self._is_fitted = False
+
+        # Precompute CD lookup for fast assignment
+        self._cd_lookup: Optional[Dict] = None
+        if cd_probabilities is not None:
+            self._build_cd_lookup(cd_probabilities)
+
+    def _build_cd_lookup(self, cd_probs: pd.DataFrame) -> None:
+        """Build lookup dict for fast CD assignment by state.
+
+        Args:
+            cd_probs: DataFrame with columns: state_fips, cd_id, prob
+        """
+        self._cd_lookup = {}
+        for state_fips in cd_probs['state_fips'].unique():
+            state_cds = cd_probs[cd_probs['state_fips'] == state_fips]
+            self._cd_lookup[int(state_fips)] = {
+                'cd_ids': state_cds['cd_id'].values,
+                'probs': state_cds['prob'].values,
+            }
+
+    def _assign_cds(self, hh: pd.DataFrame) -> pd.DataFrame:
+        """Assign congressional districts to households based on state.
+
+        Uses pseudorandom assignment weighted by CD population shares.
+
+        Args:
+            hh: Household DataFrame with state_fips column
+
+        Returns:
+            DataFrame with cd_id column added
+        """
+        if self._cd_lookup is None:
+            return hh
+
+        hh = hh.copy()
+        rng = np.random.default_rng(self.random_state)
+
+        # Get valid state FIPS codes
+        valid_fips = np.array(list(self._cd_lookup.keys()))
+
+        # Vectorized CD assignment by state
+        cd_assignments = []
+        for state_fips in hh['state_fips'].values:
+            # Round to nearest valid state FIPS
+            state_fips_rounded = int(round(state_fips))
+
+            # If not valid, find nearest valid FIPS
+            if state_fips_rounded not in self._cd_lookup:
+                # Find closest valid state FIPS
+                diffs = np.abs(valid_fips - state_fips)
+                state_fips_rounded = valid_fips[np.argmin(diffs)]
+
+            lookup = self._cd_lookup[state_fips_rounded]
+            cd_id = rng.choice(lookup['cd_ids'], p=lookup['probs'])
+            cd_assignments.append(cd_id)
+
+        hh['cd_id'] = cd_assignments
+
+        # Also fix the state_fips to be a valid integer
+        fixed_fips = []
+        for state_fips in hh['state_fips'].values:
+            rounded = int(round(state_fips))
+            if rounded not in self._cd_lookup:
+                diffs = np.abs(valid_fips - state_fips)
+                rounded = valid_fips[np.argmin(diffs)]
+            fixed_fips.append(rounded)
+        hh['state_fips'] = fixed_fips
+
+        return hh
 
     def fit(
         self,
@@ -225,6 +298,15 @@ class HierarchicalSynthesizer:
                 synthetic_hh[col] = np.clip(
                     np.round(synthetic_hh[col]).astype(int), 1, 20
                 )
+
+        # Assign congressional districts based on state
+        if self._cd_lookup is not None:
+            if verbose:
+                print("Assigning congressional districts...")
+            synthetic_hh = self._assign_cds(synthetic_hh)
+            n_with_cd = synthetic_hh['cd_id'].notna().sum()
+            if verbose:
+                print(f"  Assigned CDs to {n_with_cd:,} households ({n_with_cd/n_households:.1%})")
 
         # Pass 2: Generate persons for each household
         if verbose:
