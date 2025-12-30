@@ -239,7 +239,7 @@ class TestIntegrationWithCalibrator:
     def loader(self):
         return SupabaseTargetLoader(SUPABASE_URL, SUPABASE_KEY)
 
-    @pytest.mark.integration
+    @pytest.mark.skip(reason="Integration test requires real Supabase connection")
     def test_calibration_with_supabase_targets(self, loader):
         """End-to-end test: load targets from Supabase and run calibration."""
         import pandas as pd
