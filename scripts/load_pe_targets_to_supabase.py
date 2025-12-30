@@ -11,8 +11,12 @@ Sources:
 """
 
 import os
+import time
 import pandas as pd
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from urllib3.exceptions import ReadTimeoutError as Urllib3ReadTimeoutError
 from io import StringIO
 from typing import Optional, List, Dict, Any
 
@@ -26,7 +30,7 @@ SUPABASE_KEY = os.environ.get(
 
 
 class SupabaseClient:
-    """Simple REST client for Supabase microplex schema."""
+    """Simple REST client for Supabase microplex schema with retries."""
 
     def __init__(self, url: str, key: str, schema: str = "microplex"):
         self.base_url = f"{url}/rest/v1"
@@ -38,6 +42,34 @@ class SupabaseClient:
             "Content-Profile": schema,
             "Prefer": "return=representation"
         }
+        self.session = requests.Session()
+
+    def _request_with_retry(self, method: str, url: str, max_retries: int = 8, **kwargs) -> requests.Response:
+        """Make a request with exponential backoff retry on timeouts."""
+        kwargs.setdefault("timeout", 30)
+        for attempt in range(max_retries):
+            try:
+                resp = self.session.request(method, url, **kwargs)
+                if resp.status_code in [429, 500, 502, 503, 504]:
+                    if attempt < max_retries - 1:
+                        wait_time = min(2 ** attempt, 60)  # Cap at 60s
+                        print(f"    (Retry {attempt+1}/{max_retries} after {resp.status_code}, waiting {wait_time}s)")
+                        time.sleep(wait_time)
+                        continue
+                return resp
+            except (requests.exceptions.Timeout, requests.exceptions.ReadTimeout,
+                    requests.exceptions.ConnectionError, Urllib3ReadTimeoutError, Exception) as e:
+                # Catch all exceptions for network issues
+                if "timeout" in str(e).lower() or "connection" in str(e).lower():
+                    if attempt < max_retries - 1:
+                        wait_time = min(2 ** attempt, 60)  # Cap at 60s
+                        print(f"    (Retry {attempt+1}/{max_retries} after {type(e).__name__}, waiting {wait_time}s)")
+                        time.sleep(wait_time)
+                    else:
+                        raise
+                else:
+                    raise
+        return resp
 
     def select(self, table: str, columns: str = "*", filters: Dict = None, limit: int = None) -> List[Dict]:
         """Select rows from a table."""
@@ -47,14 +79,14 @@ class SupabaseClient:
                 url += f"&{k}=eq.{v}"
         if limit:
             url += f"&limit={limit}"
-        resp = requests.get(url, headers=self.headers)
+        resp = self._request_with_retry("GET", url, headers=self.headers)
         resp.raise_for_status()
         return resp.json()
 
     def insert(self, table: str, data: Dict) -> Dict:
         """Insert a row, returning the inserted data."""
         url = f"{self.base_url}/{table}"
-        resp = requests.post(url, headers=self.headers, json=data)
+        resp = self._request_with_retry("POST", url, headers=self.headers, json=data)
         resp.raise_for_status()
         return resp.json()[0] if resp.json() else {}
 
@@ -64,16 +96,17 @@ class SupabaseClient:
         headers = {**self.headers, "Prefer": "resolution=merge-duplicates,return=representation"}
         if on_conflict:
             url += f"?on_conflict={on_conflict}"
-        resp = requests.post(url, headers=headers, json=data)
+        resp = self._request_with_retry("POST", url, headers=headers, json=data)
         resp.raise_for_status()
         return resp.json()[0] if resp.json() else {}
 
     def update(self, table: str, data: Dict, filters: Dict) -> List[Dict]:
         """Update rows matching filters."""
         url = f"{self.base_url}/{table}"
-        for k, v in filters.items():
-            url += f"?{k}=eq.{v}"
-        resp = requests.patch(url, headers=self.headers, json=data)
+        filter_parts = [f"{k}=eq.{v}" for k, v in filters.items()]
+        if filter_parts:
+            url += "?" + "&".join(filter_parts)
+        resp = self._request_with_retry("PATCH", url, headers=self.headers, json=data)
         resp.raise_for_status()
         return resp.json()
 
@@ -175,7 +208,7 @@ def insert_target(source_id: str, stratum_id: str, variable: str, value: float,
 
     # Check if exists - need to filter on multiple fields
     url = f"{supabase.base_url}/targets?select=id&source_id=eq.{source_id}&stratum_id=eq.{stratum_id}&variable=eq.{variable}&period=eq.{period}"
-    resp = requests.get(url, headers=supabase.headers)
+    resp = supabase._request_with_retry("GET", url, headers=supabase.headers)
     result = resp.json() if resp.status_code == 200 else []
 
     if result:
@@ -217,6 +250,7 @@ def load_medicaid_targets():
     print(f"  National: {total_enrollment:,.0f} enrolled")
 
     # By state
+    loaded = 0
     for _, row in df.iterrows():
         state = row["state"]
         fips = STATE_NAME_TO_FIPS.get(state)
@@ -228,8 +262,11 @@ def load_medicaid_targets():
             [{"variable": "state_fips", "operator": "==", "value": fips}]
         )
         insert_target(source_id, stratum, "medicaid_enrollment", row["enrollment"], "count", 2024)
+        loaded += 1
+        if loaded % 10 == 0:
+            print(f"    Progress: {loaded} states processed...")
 
-    print(f"  Loaded {len(df)} state targets")
+    print(f"  Loaded {loaded} state targets")
 
 
 def load_snap_targets():
@@ -255,6 +292,7 @@ def load_snap_targets():
     print(f"  National: {total_hh:,.0f} households, ${total_cost/1e9:.1f}B spending")
 
     # By state
+    loaded = 0
     for _, row in df.iterrows():
         fips = row["state_fips"]
         state = STATE_FIPS.get(fips)
@@ -267,8 +305,11 @@ def load_snap_targets():
         )
         insert_target(source_id, stratum, "snap_households", row["Households"], "count", 2024)
         insert_target(source_id, stratum, "snap_spending", row["Cost"], "amount", 2024)
+        loaded += 1
+        if loaded % 10 == 0:
+            print(f"    Progress: {loaded} states processed...")
 
-    print(f"  Loaded {len(df) * 2} state targets")
+    print(f"  Loaded {loaded * 2} state targets")
 
 
 def load_aca_targets():
@@ -291,6 +332,7 @@ def load_aca_targets():
     print(f"  National: {total_enrollment:,.0f} enrolled, ${total_spending/1e9:.1f}B PTC")
 
     # By state
+    loaded = 0
     for _, row in df.iterrows():
         state = row["state"]
         fips = STATE_NAME_TO_FIPS.get(state)
@@ -303,8 +345,11 @@ def load_aca_targets():
         )
         insert_target(source_id, stratum, "aca_enrollment", row["enrollment"], "count", 2024)
         insert_target(source_id, stratum, "aca_ptc_spending", row["spending"], "amount", 2024)
+        loaded += 1
+        if loaded % 10 == 0:
+            print(f"    Progress: {loaded} states processed...")
 
-    print(f"  Loaded {len(df) * 2} state targets")
+    print(f"  Loaded {loaded * 2} state targets")
 
 
 def load_population_targets():
@@ -327,6 +372,7 @@ def load_population_targets():
     print(f"  National: {total_pop:,.0f} total, {total_under5:,.0f} under 5")
 
     # By state
+    loaded = 0
     for _, row in df.iterrows():
         state = row["state"]
         fips = STATE_NAME_TO_FIPS.get(state)
@@ -339,8 +385,11 @@ def load_population_targets():
         )
         insert_target(source_id, stratum, "total_population", row["population"], "count", 2024)
         insert_target(source_id, stratum, "population_under_5", row["population_under_5"], "count", 2024)
+        loaded += 1
+        if loaded % 10 == 0:
+            print(f"    Progress: {loaded} states processed...")
 
-    print(f"  Loaded {len(df) * 2} state targets")
+    print(f"  Loaded {loaded * 2} state targets")
 
 
 def load_irs_income_targets():
