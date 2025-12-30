@@ -14,9 +14,9 @@ from unittest.mock import Mock, patch, MagicMock
 import responses
 import json
 
-# Import the batch client
+# Import the Supabase client
 try:
-    from scripts.load_pe_targets_batch import BatchSupabaseClient as SupabaseClient
+    from scripts.load_pe_targets import BatchSupabaseClient as SupabaseClient
 except ImportError:
     SupabaseClient = None
 
