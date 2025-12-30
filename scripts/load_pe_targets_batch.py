@@ -137,6 +137,18 @@ class BatchSupabaseClient:
         headers = {**self.headers, "Prefer": "return=representation"}
         self._request("POST", url, headers=headers, json=record)
 
+    def batch_upsert_strata(self, strata: List[Dict], return_mapping: bool = False) -> Any:
+        """Batch upsert strata with optional name->id mapping."""
+        result = self.batch_upsert("strata", strata, "name,jurisdiction")
+        if return_mapping:
+            return {(r["name"], r["jurisdiction"]): r["id"] for r in result}
+        return result
+
+    def batch_upsert_targets(self, targets: List[Dict], chunk_size: int = 500) -> List[Dict]:
+        """Batch upsert targets."""
+        return self.batch_upsert("targets", targets, "source_id,stratum_id,variable,period",
+                                 chunk_size=chunk_size)
+
 
 @dataclass
 class TargetCollector:
