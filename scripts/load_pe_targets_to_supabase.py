@@ -18,7 +18,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from urllib3.exceptions import ReadTimeoutError as Urllib3ReadTimeoutError
 from io import StringIO
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 
 # Supabase connection - use Cosilico DB
 SUPABASE_URL = "https://nsupqhfchdtqclomlrgs.supabase.co"
@@ -110,6 +110,65 @@ class SupabaseClient:
         resp.raise_for_status()
         return resp.json()
 
+    def batch_upsert_strata(self, strata: List[Dict], return_mapping: bool = False) -> Any:
+        """
+        Batch upsert multiple strata in a single request.
+
+        Args:
+            strata: List of dicts with name, jurisdiction, description
+            return_mapping: If True, return dict mapping (name, jurisdiction) -> id
+
+        Returns:
+            List of inserted/updated records, or mapping if return_mapping=True
+        """
+        if not strata:
+            return {} if return_mapping else []
+
+        url = f"{self.base_url}/strata?on_conflict=name,jurisdiction"
+        headers = {
+            **self.headers,
+            "Prefer": "resolution=merge-duplicates,return=representation"
+        }
+
+        resp = self._request_with_retry("POST", url, headers=headers, json=strata)
+        resp.raise_for_status()
+        result = resp.json()
+
+        if return_mapping:
+            return {(r["name"], r["jurisdiction"]): r["id"] for r in result}
+        return result
+
+    def batch_upsert_targets(self, targets: List[Dict], chunk_size: int = 500) -> List[Dict]:
+        """
+        Batch upsert multiple targets, chunking large batches.
+
+        Args:
+            targets: List of target dicts
+            chunk_size: Max records per request (default 500)
+
+        Returns:
+            List of all inserted/updated records
+        """
+        if not targets:
+            return []
+
+        results = []
+        # Upsert on composite key
+        url = f"{self.base_url}/targets?on_conflict=source_id,stratum_id,variable,period"
+        headers = {
+            **self.headers,
+            "Prefer": "resolution=merge-duplicates,return=representation"
+        }
+
+        # Process in chunks
+        for i in range(0, len(targets), chunk_size):
+            chunk = targets[i:i + chunk_size]
+            resp = self._request_with_retry("POST", url, headers=headers, json=chunk)
+            resp.raise_for_status()
+            results.extend(resp.json())
+
+        return results
+
 
 # Initialize client
 supabase = SupabaseClient(SUPABASE_URL, SUPABASE_KEY)
@@ -170,30 +229,46 @@ def get_or_create_source(jurisdiction: str, institution: str, dataset: str, name
 
 def get_or_create_stratum(name: str, jurisdiction: str, constraints: list = None):
     """Get existing stratum or create new one."""
-    result = supabase.select("strata", "id", {
-        "name": name,
-        "jurisdiction": jurisdiction
-    })
+    # URL-encode the name for the query
+    import urllib.parse
+    encoded_name = urllib.parse.quote(name, safe='')
 
-    if result:
-        return result[0]["id"]
+    # Try to find existing stratum
+    url = f"{supabase.base_url}/strata?select=id&name=eq.{encoded_name}&jurisdiction=eq.{jurisdiction}"
+    resp = supabase._request_with_retry("GET", url, headers=supabase.headers)
+    if resp.status_code == 200 and resp.json():
+        return resp.json()[0]["id"]
 
-    inserted = supabase.insert("strata", {
-        "name": name,
-        "jurisdiction": jurisdiction,
-        "description": name
-    })
-    stratum_id = inserted["id"]
+    # Try to insert, handle conflict gracefully
+    try:
+        inserted = supabase.insert("strata", {
+            "name": name,
+            "jurisdiction": jurisdiction,
+            "description": name
+        })
+        stratum_id = inserted["id"]
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 409:
+            # Conflict - stratum already exists, fetch it
+            resp = supabase._request_with_retry("GET", url, headers=supabase.headers)
+            if resp.status_code == 200 and resp.json():
+                return resp.json()[0]["id"]
+            raise  # Re-raise if we still can't find it
+        raise
 
     # Add constraints if provided
     if constraints:
         for c in constraints:
-            supabase.insert("stratum_constraints", {
-                "stratum_id": stratum_id,
-                "variable": c["variable"],
-                "operator": c["operator"],
-                "value": c["value"]
-            })
+            try:
+                supabase.insert("stratum_constraints", {
+                    "stratum_id": stratum_id,
+                    "variable": c["variable"],
+                    "operator": c["operator"],
+                    "value": c["value"]
+                })
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code != 409:  # Ignore duplicate constraints
+                    raise
 
     return stratum_id
 
@@ -548,6 +623,323 @@ def load_eitc_targets():
     print(f"  Loaded {len(df) * 2} EITC targets")
 
 
+def load_soi_targets():
+    """Load full IRS SOI targets by AGI bracket, filing status, year."""
+    print("\n=== Loading SOI Targets by AGI Bracket ===")
+    df = fetch_csv("soi_targets.csv")
+
+    source_id = get_or_create_source(
+        "us", "irs", "soi_detailed",
+        "IRS Statistics of Income - Detailed",
+        "https://www.irs.gov/statistics/soi-tax-stats-individual-income-tax-statistics"
+    )
+
+    loaded = 0
+    # Group by unique combinations to create strata
+    # Column names have spaces: "Filing status", "AGI lower bound", "AGI upper bound"
+    for (year, filing_status, agi_lower, agi_upper, variable), group in df.groupby(
+        ["Year", "Filing status", "AGI lower bound", "AGI upper bound", "Variable"]
+    ):
+        # Handle -inf/inf comparisons
+        is_neg_inf_lower = (agi_lower == float('-inf')) or (str(agi_lower) == "-inf")
+        is_pos_inf_upper = (agi_upper == float('inf')) or (str(agi_upper) == "inf")
+
+        # Create stratum name
+        if is_neg_inf_lower and is_pos_inf_upper:
+            agi_range = "all AGI"
+        elif is_neg_inf_lower:
+            agi_range = f"AGI < ${float(agi_upper):,.0f}"
+        elif is_pos_inf_upper:
+            agi_range = f"AGI >= ${float(agi_lower):,.0f}"
+        else:
+            agi_range = f"AGI ${float(agi_lower):,.0f}-${float(agi_upper):,.0f}"
+
+        stratum_name = f"Tax filers {filing_status} {agi_range}"
+
+        constraints = []
+        if filing_status != "All":
+            constraints.append({"variable": "filing_status", "operator": "==", "value": filing_status})
+        if not is_neg_inf_lower:
+            constraints.append({"variable": "adjusted_gross_income", "operator": ">=", "value": str(agi_lower)})
+        if not is_pos_inf_upper:
+            constraints.append({"variable": "adjusted_gross_income", "operator": "<", "value": str(agi_upper)})
+
+        stratum_id = get_or_create_stratum(stratum_name, "us", constraints if constraints else None)
+
+        # Get the value - use first row (they should be same for this grouping)
+        value = group["Value"].iloc[0]
+        is_count = group["Count"].iloc[0] if "Count" in group.columns else False
+        target_type = "count" if is_count else "amount"
+
+        insert_target(source_id, stratum_id, variable, value, target_type, int(year))
+        loaded += 1
+
+        if loaded % 500 == 0:
+            print(f"    Progress: {loaded} targets processed...")
+
+    print(f"  Loaded {loaded} SOI targets")
+
+
+def load_age_state_targets():
+    """Load age distribution by state."""
+    print("\n=== Loading Age by State Targets ===")
+    df = fetch_csv("age_state.csv")
+
+    source_id = get_or_create_source(
+        "us", "census", "acs_age",
+        "Census ACS Age Distribution",
+        "https://data.census.gov/"
+    )
+
+    # Age columns in the file
+    age_cols = [c for c in df.columns if c not in ["GEO_ID", "GEO_NAME"]]
+
+    loaded = 0
+    for _, row in df.iterrows():
+        # Extract state FIPS from GEO_ID (format: 0400000US01)
+        fips = row["GEO_ID"][-2:]
+        state = STATE_FIPS.get(fips)
+        if not state:
+            continue
+
+        # Create state stratum
+        state_stratum = get_or_create_stratum(
+            f"State {state} population", f"us-{state.lower()}",
+            [{"variable": "state_fips", "operator": "==", "value": fips}]
+        )
+
+        # Insert target for each age group
+        for age_col in age_cols:
+            # Parse age range from column name (e.g., "0-4", "5-9", "85+")
+            insert_target(source_id, state_stratum, f"population_age_{age_col}", row[age_col], "count", 2024)
+            loaded += 1
+
+        if (loaded // len(age_cols)) % 10 == 0 and loaded % len(age_cols) == 0:
+            print(f"    Progress: {loaded // len(age_cols)} states processed...")
+
+    print(f"  Loaded {loaded} age-state targets")
+
+
+def load_agi_state_targets():
+    """Load AGI distribution by state and bracket."""
+    print("\n=== Loading AGI by State Targets ===")
+    df = fetch_csv("agi_state.csv")
+
+    source_id = get_or_create_source(
+        "us", "irs", "soi_state",
+        "IRS SOI State Data",
+        "https://www.irs.gov/statistics/soi-tax-stats-historic-table-2"
+    )
+
+    loaded = 0
+    for _, row in df.iterrows():
+        # Skip rows with missing GEO_ID
+        geo_id = row["GEO_ID"]
+        if pd.isna(geo_id) or not isinstance(geo_id, str):
+            continue
+
+        # Extract state FIPS
+        fips = geo_id[-2:]
+        state = STATE_FIPS.get(fips)
+        if not state:
+            continue
+
+        agi_lower = row["AGI_LOWER_BOUND"]
+        agi_upper = row["AGI_UPPER_BOUND"]
+
+        # Handle -inf/inf comparisons
+        is_neg_inf_lower = pd.isna(agi_lower) or (str(agi_lower) == "-inf") or (agi_lower == float('-inf'))
+        is_pos_inf_upper = pd.isna(agi_upper) or (str(agi_upper) == "inf") or (agi_upper == float('inf'))
+
+        # Create stratum name
+        if is_neg_inf_lower and is_pos_inf_upper:
+            agi_range = "all AGI"
+        elif is_neg_inf_lower:
+            agi_range = f"AGI < ${float(agi_upper):,.0f}"
+        elif is_pos_inf_upper:
+            agi_range = f"AGI >= ${float(agi_lower):,.0f}"
+        else:
+            agi_range = f"AGI ${float(agi_lower):,.0f}-${float(agi_upper):,.0f}"
+
+        stratum_name = f"State {state} {agi_range}"
+
+        constraints = [{"variable": "state_fips", "operator": "==", "value": fips}]
+        if not is_neg_inf_lower:
+            constraints.append({"variable": "adjusted_gross_income", "operator": ">=", "value": str(agi_lower)})
+        if not is_pos_inf_upper:
+            constraints.append({"variable": "adjusted_gross_income", "operator": "<", "value": str(agi_upper)})
+
+        stratum_id = get_or_create_stratum(stratum_name, f"us-{state.lower()}", constraints)
+
+        is_count = row["IS_COUNT"] if "IS_COUNT" in row else False
+        target_type = "count" if is_count else "amount"
+        variable = row["VARIABLE"] if "VARIABLE" in row else "adjusted_gross_income"
+
+        insert_target(source_id, stratum_id, variable, row["VALUE"], target_type, 2024)
+        loaded += 1
+
+        if loaded % 100 == 0:
+            print(f"    Progress: {loaded} targets processed...")
+
+    print(f"  Loaded {loaded} AGI-state targets")
+
+
+def load_spm_agi_targets():
+    """Load SPM threshold by AGI decile."""
+    print("\n=== Loading SPM by AGI Decile Targets ===")
+    df = fetch_csv("spm_threshold_agi.csv")
+
+    source_id = get_or_create_source(
+        "us", "census", "spm",
+        "Census SPM Thresholds",
+        "https://www.census.gov/topics/income-poverty/supplemental-poverty-measure.html"
+    )
+
+    loaded = 0
+    for _, row in df.iterrows():
+        decile = int(row["decile"])
+        spm_lower = row["lower_spm_threshold"]
+        spm_upper = row["upper_spm_threshold"]
+
+        stratum_name = f"Decile {decile} (SPM ${spm_lower:,.0f}-${spm_upper:,.0f})"
+
+        constraints = [
+            {"variable": "spm_threshold", "operator": ">=", "value": str(spm_lower)},
+            {"variable": "spm_threshold", "operator": "<", "value": str(spm_upper)}
+        ]
+
+        stratum_id = get_or_create_stratum(stratum_name, "us", constraints)
+
+        insert_target(source_id, stratum_id, "adjusted_gross_income", row["adjusted_gross_income"], "amount", 2024)
+        insert_target(source_id, stratum_id, "count", row["count"], "count", 2024)
+        loaded += 2
+
+    print(f"  Loaded {loaded} SPM-AGI targets")
+
+
+def load_real_estate_tax_targets():
+    """Load real estate taxes by state."""
+    print("\n=== Loading Real Estate Tax by State Targets ===")
+    df = fetch_csv("real_estate_taxes_by_state_acs.csv")
+
+    source_id = get_or_create_source(
+        "us", "census", "acs_real_estate_taxes",
+        "Census ACS Real Estate Taxes",
+        "https://data.census.gov/"
+    )
+
+    loaded = 0
+    for _, row in df.iterrows():
+        state = row["state_code"]
+        fips = STATE_NAME_TO_FIPS.get(state)
+        if not fips:
+            continue
+
+        stratum = get_or_create_stratum(
+            f"State {state} population", f"us-{state.lower()}",
+            [{"variable": "state_fips", "operator": "==", "value": fips}]
+        )
+
+        # Value is in billions, convert to dollars
+        value = row["real_estate_taxes_bn"] * 1e9
+        insert_target(source_id, stratum, "real_estate_taxes", value, "amount", 2024)
+        loaded += 1
+
+        if loaded % 10 == 0:
+            print(f"    Progress: {loaded} states processed...")
+
+    print(f"  Loaded {loaded} real estate tax targets")
+
+
+def load_census_projection_targets():
+    """Load Census population projections by race/sex/year (totals only, not age-specific)."""
+    print("\n=== Loading Census Population Projections ===")
+    df = fetch_csv("np2023_d5_mid.csv")
+
+    source_id = get_or_create_source(
+        "us", "census", "population_projections_detailed",
+        "Census Population Projections 2023",
+        "https://www.census.gov/programs-surveys/popproj.html"
+    )
+
+    # RACE_HISP mapping (from Census)
+    race_map = {0: "All", 1: "White non-Hispanic", 2: "Black", 3: "AIAN",
+                4: "Asian", 5: "NHPI", 6: "Two+", 7: "Hispanic"}
+    sex_map = {0: "Both", 1: "Male", 2: "Female"}
+    nativity_map = {0: "All", 1: "Native", 2: "Foreign-born"}
+
+    loaded = 0
+    # Only load total population by demographic group (not age-specific to keep size reasonable)
+    for _, row in df.iterrows():
+        year = int(row["YEAR"])
+        nativity = int(row["NATIVITY"])
+        race = int(row["RACE_HISP"])
+        sex = int(row["SEX"])
+
+        # Create stratum - skip constraints to avoid conflicts, year in name suffices
+        parts = []
+
+        if nativity != 0:
+            parts.append(nativity_map.get(nativity, f"Nativity {nativity}"))
+        if race != 0:
+            parts.append(race_map.get(race, f"Race {race}"))
+        if sex != 0:
+            parts.append(sex_map.get(sex, f"Sex {sex}"))
+
+        base_name = " ".join(parts) if parts else "Total population"
+        stratum_name = f"Census projection {base_name} ({year})"
+        stratum_id = get_or_create_stratum(stratum_name, "us", None)  # No constraints
+
+        # Insert total population only (skip age-specific to keep manageable)
+        insert_target(source_id, stratum_id, "total_population", row["TOTAL_POP"], "count", year)
+        loaded += 1
+
+        if loaded % 500 == 0:
+            print(f"    Progress: {loaded} targets processed...")
+
+    print(f"  Loaded {loaded} Census projection targets")
+
+
+def load_healthcare_age_targets():
+    """Load healthcare spending by age bracket."""
+    print("\n=== Loading Healthcare Spending by Age ===")
+    df = fetch_csv("healthcare_spending.csv")
+
+    source_id = get_or_create_source(
+        "us", "bls", "healthcare_spending_age",
+        "BLS Consumer Expenditure Survey - Healthcare",
+        "https://www.bls.gov/cex/"
+    )
+
+    loaded = 0
+    for _, row in df.iterrows():
+        age_lower = int(row["age_10_year_lower_bound"])
+
+        # Create age bracket stratum - use "healthcare" prefix to avoid conflicts
+        if age_lower == 80:
+            stratum_name = f"Healthcare population age 80+"
+            constraints = [{"variable": "age", "operator": ">=", "value": "80"}]
+        else:
+            age_upper = age_lower + 10
+            stratum_name = f"Healthcare population age {age_lower}-{age_upper-1}"
+            constraints = [
+                {"variable": "age", "operator": ">=", "value": str(age_lower)},
+                {"variable": "age", "operator": "<", "value": str(age_upper)}
+            ]
+
+        stratum_id = get_or_create_stratum(stratum_name, "us", constraints)
+
+        # Insert each spending category
+        for col in ["health_insurance_premiums_without_medicare_part_b",
+                    "over_the_counter_health_expenses", "other_medical_expenses",
+                    "medicare_part_b_premiums"]:
+            if col in row:
+                insert_target(source_id, stratum_id, col, row[col], "amount", 2024)
+                loaded += 1
+
+    print(f"  Loaded {loaded} healthcare-age targets")
+
+
 def main():
     print("=" * 70)
     print("LOADING POLICYENGINE CALIBRATION TARGETS TO SUPABASE")
@@ -562,15 +954,31 @@ def main():
         return
 
     # Load all targets
+    # National aggregates
     load_irs_income_targets()
     load_benefit_spending_targets()
     load_healthcare_targets()
     load_tax_targets()
+
+    # By number of children
     load_eitc_targets()
+
+    # By state
     load_medicaid_targets()
     load_snap_targets()
     load_aca_targets()
     load_population_targets()
+    load_age_state_targets()
+    load_agi_state_targets()
+    load_real_estate_tax_targets()
+
+    # By demographic/bracket
+    load_soi_targets()
+    load_spm_agi_targets()
+    load_healthcare_age_targets()
+
+    # Census projections (large - do last)
+    load_census_projection_targets()
 
     print("\n" + "=" * 70)
     print("DONE!")
