@@ -362,6 +362,8 @@ class MaskedMAF:
         checkpoint = {
             "n_features": self.n_features,
             "n_context": self.n_context,
+            "n_layers": len(self.flow.layers),
+            "hidden_dim": self.flow.layers[0].made.hidden_dim,
             "use_inverse_freq_weighting": self.use_inverse_freq_weighting,
             "flow_state": self.flow.state_dict(),
             "feature_means": self.feature_means_,
@@ -394,6 +396,8 @@ class MaskedMAF:
         model = cls(
             n_features=checkpoint["n_features"],
             n_context=checkpoint["n_context"],
+            n_layers=checkpoint["n_layers"],
+            hidden_dim=checkpoint["hidden_dim"],
             use_inverse_freq_weighting=checkpoint["use_inverse_freq_weighting"],
         )
 

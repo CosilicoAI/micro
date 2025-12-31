@@ -171,6 +171,10 @@ from microplex.fusion import (
     stack_surveys,
     COMMON_SCHEMA,
     MaskedMAF,
+    FusionConfig,
+    FusionResult,
+    FusionSynthesizer,
+    synthesize_from_surveys,
 )
 
 # Validation
@@ -321,6 +325,10 @@ __all__ = [
     "stack_surveys",
     "COMMON_SCHEMA",
     "MaskedMAF",
+    "FusionConfig",
+    "FusionResult",
+    "FusionSynthesizer",
+    "synthesize_from_surveys",
     # Validation
     "AGI_BRACKETS",
     "FILING_STATUSES",
