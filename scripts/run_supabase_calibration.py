@@ -436,14 +436,177 @@ def filter_feasible_targets(df: pd.DataFrame, targets: Dict[str, float], min_cov
     return feasible
 
 
+def run_soft_calibration(
+    df: pd.DataFrame,
+    targets: Dict[str, float],
+    regularization: float = 0.1,
+    max_iter: int = 1000,
+) -> Tuple[pd.DataFrame, Dict[str, float]]:
+    """Run soft-constraint calibration that minimizes total error across ALL targets.
+
+    Unlike IPF which tries to exactly match targets (and fails with conflicts),
+    this minimizes weighted relative error across all targets simultaneously.
+
+    Args:
+        df: DataFrame with weight column and target indicator columns
+        targets: Dict mapping column names to target values
+        regularization: Weight on staying close to initial weights (higher = less change)
+        max_iter: Maximum optimization iterations
+
+    Returns:
+        Tuple of (calibrated DataFrame, targets used)
+    """
+    from scipy.optimize import minimize
+
+    print("\n" + "=" * 70)
+    print("RUNNING SOFT-CONSTRAINT CALIBRATION")
+    print("=" * 70)
+
+    if not targets:
+        print("ERROR: No targets available")
+        return df, {}
+
+    # Filter targets with matching columns and sufficient CPS coverage
+    valid_targets = {}
+    skipped = {"no_column": 0, "negative": 0, "zero": 0, "no_cps_coverage": 0}
+
+    for col, target in targets.items():
+        if col not in df.columns:
+            skipped["no_column"] += 1
+            continue
+        if target <= 0:
+            skipped["negative" if target < 0 else "zero"] += 1
+            continue
+
+        # Check if CPS has reasonable coverage for this target
+        col_sum = (df[col] * df["weight"]).sum()
+        if col_sum <= 0:
+            skipped["no_cps_coverage"] += 1
+            continue
+
+        # Require CPS to be within 5x of target (skip targets CPS can't match)
+        ratio = col_sum / target
+        if ratio < 0.2 or ratio > 5:  # CPS is more than 5x different from target
+            skipped["no_cps_coverage"] += 1
+            continue
+
+        valid_targets[col] = target
+
+    print(f"Valid targets: {len(valid_targets)}")
+    print(f"Skipped: {skipped}")
+
+    if not valid_targets:
+        print("ERROR: No valid targets")
+        return df, {}
+
+    # Build constraint matrix A and target vector b
+    cols = list(valid_targets.keys())
+    A = df[cols].values.T.astype(np.float64)  # Shape: (n_targets, n_records)
+    b = np.array([valid_targets[c] for c in cols], dtype=np.float64)
+    w0 = df["weight"].values.copy().astype(np.float64)
+
+    # Compute current weighted sums for comparison
+    current = A @ w0
+    print(f"\nCurrent vs Target statistics:")
+    rel_errors = np.abs(current - b) / np.maximum(b, 1e-10) * 100
+    print(f"  Mean relative error: {rel_errors.mean():.2f}%")
+    print(f"  Median relative error: {np.median(rel_errors):.2f}%")
+    print(f"  Targets < 10% error: {(rel_errors < 10).sum()}")
+    print(f"  Targets < 50% error: {(rel_errors < 50).sum()}")
+
+    print(f"\nOptimization setup:")
+    print(f"  Records: {len(w0):,}")
+    print(f"  Targets: {len(b)}")
+    print(f"  Regularization: {regularization}")
+
+    # Weight bounds: per-record bounds based on initial weight
+    # Allow 0.1x to 10x change from initial weight for each record
+    mean_w = w0[w0 > 0].mean() if (w0 > 0).any() else 1.0
+    bounds = []
+    for w in w0:
+        if w > 1:
+            # Normal case: allow 0.1x to 10x
+            bounds.append((w * 0.1, w * 10))
+        elif w > 0:
+            # Small weights: use absolute bounds
+            bounds.append((0.1, mean_w * 10))
+        else:
+            # Zero weights: use mean-based bounds
+            bounds.append((0.1, mean_w * 10))
+
+    # Objective: minimize sum of squared LOG relative errors + regularization
+    # Using log-relative error is more numerically stable for wide range of target values
+    def objective(w):
+        achieved = A @ w
+        # Log-ratio error: more stable than relative error for wide ranges
+        safe_achieved = np.maximum(achieved, 1e-10)
+        safe_target = np.maximum(b, 1e-10)
+        log_error = np.sum((np.log(safe_achieved) - np.log(safe_target)) ** 2)
+
+        # Regularization: penalize large weight changes
+        valid_mask = w0 > 1
+        safe_w0 = np.maximum(w0[valid_mask], 1e-10)
+        safe_w = np.maximum(w[valid_mask], 1e-10)
+        reg_term = regularization * np.sum((np.log(safe_w) - np.log(safe_w0)) ** 2)
+
+        return log_error + reg_term
+
+    def gradient(w):
+        achieved = A @ w
+        safe_achieved = np.maximum(achieved, 1e-10)
+        safe_target = np.maximum(b, 1e-10)
+
+        # Gradient of log error
+        log_ratio = np.log(safe_achieved) - np.log(safe_target)
+        grad_target = 2 * A.T @ (log_ratio / safe_achieved)
+
+        # Gradient of regularization
+        valid_mask = w0 > 1
+        grad_reg = np.zeros_like(w)
+        safe_w0 = np.maximum(w0[valid_mask], 1e-10)
+        safe_w = np.maximum(w[valid_mask], 1e-10)
+        grad_reg[valid_mask] = 2 * regularization * (np.log(safe_w) - np.log(safe_w0)) / safe_w
+
+        return grad_target + grad_reg
+
+    print("Optimizing...")
+    result = minimize(
+        objective,
+        w0,
+        method="L-BFGS-B",
+        jac=gradient,
+        bounds=bounds,
+        options={"maxiter": max_iter},
+    )
+
+    df = df.copy()
+    df["calibrated_weight"] = result.x
+
+    print(f"\nOptimization complete!")
+    print(f"  Converged: {result.success}")
+    print(f"  Iterations: {result.nit}")
+    print(f"  Final objective: {result.fun:.4f}")
+
+    # Weight statistics
+    valid_mask = w0 > 1
+    weight_ratio = result.x[valid_mask] / w0[valid_mask]
+    print(f"\nWeight statistics:")
+    print(f"  Min ratio: {weight_ratio.min():.4f}")
+    print(f"  Max ratio: {weight_ratio.max():.4f}")
+    print(f"  Mean ratio: {weight_ratio.mean():.4f}")
+    print(f"  Median ratio: {np.median(weight_ratio):.4f}")
+
+    return df, valid_targets
+
+
 def run_calibration(df: pd.DataFrame, targets: Dict[str, float]) -> Tuple[pd.DataFrame, Dict[str, float]]:
-    """Run IPF calibration with weight bounds.
+    """Run IPF calibration with weight bounds (legacy method).
 
     Returns:
         Tuple of (calibrated DataFrame, dict of targets that were actually used)
     """
     print("\n" + "=" * 70)
-    print("RUNNING CALIBRATION")
+    print("RUNNING CALIBRATION (IPF)")
     print("=" * 70)
 
     if not targets:
@@ -554,9 +717,9 @@ def filter_target_types(targets: List[Dict], include_types: List[str]) -> List[D
 
 
 def main():
-    """Run calibration with Supabase targets."""
+    """Run calibration with ALL Supabase targets using soft constraints."""
     print("=" * 70)
-    print("MICROPLEX CALIBRATION - ALL SUPABASE TARGETS")
+    print("MICROPLEX CALIBRATION - ALL SUPABASE TARGETS (SOFT CONSTRAINTS)")
     print("=" * 70)
 
     data_dir = Path(__file__).parent.parent / "data"
@@ -564,100 +727,55 @@ def main():
     # Load CPS data
     df = load_cps_data(data_dir)
 
-    # Load targets from Supabase
+    # Load ALL targets from Supabase
     loader = SupabaseCalibrationLoader()
     raw_targets = loader.load_targets_with_constraints(period=2024)
 
-    # Use non-overlapping targets:
-    # 1. State populations (form a partition)
-    # 2. National income totals (don't overlap with state pop - different variable)
-    # 3. National benefit totals
-
-    national_income_vars = [
-        "employment_income", "self_employment_income", "dividend_income",
-        "interest_income", "rental_income", "social_security",
-        "taxable_pension_income", "long_term_capital_gains",
-        "short_term_capital_gains", "partnership_s_corp_income",
-        "farm_income", "unemployment_compensation",
-    ]
-
-    national_benefit_vars = [
-        "snap_spending", "ssi_spending", "eitc_spending", "eitc",
-    ]
-
-    filtered_targets = []
-    target_counts = {"state_pop": 0, "income": 0, "benefit": 0, "national_pop": 0}
+    # Filter to US targets only (skip UK)
+    us_targets = []
+    target_counts = {
+        "population": 0,
+        "income": 0,
+        "benefit": 0,
+        "enrollment": 0,
+        "other": 0,
+    }
 
     for t in raw_targets:
-        var = t["variable"]
         jurisdiction = t.get("stratum", {}).get("jurisdiction", "us")
-        stratum_name = t.get("stratum", {}).get("name", "")
-        constraints = t.get("constraints", [])
 
-        # State-level population - forms a partition
-        if var == "total_population" and jurisdiction.startswith("us-") and len(jurisdiction) == 5:
-            # Only simple state populations (no age/AGI constraints)
-            if len(constraints) <= 1:
-                filtered_targets.append(t)
-                target_counts["state_pop"] += 1
+        # Skip non-US targets
+        if not jurisdiction.startswith("us"):
             continue
 
-        # National income totals (simple, no constraints)
-        if var in national_income_vars and jurisdiction == "us":
-            # Only include national totals without demographic constraints
-            if len(constraints) == 0 or stratum_name.lower().startswith("national"):
-                filtered_targets.append(t)
-                target_counts["income"] += 1
-            continue
-
-        # National benefit totals
-        if var in national_benefit_vars and jurisdiction == "us":
-            if len(constraints) == 0 or stratum_name.lower().startswith("national"):
-                filtered_targets.append(t)
-                target_counts["benefit"] += 1
-            continue
-
-        # National total population (to constrain sum of state pops)
-        if var == "total_population" and jurisdiction == "us":
-            if len(constraints) == 0:
-                filtered_targets.append(t)
-                target_counts["national_pop"] = 1
-            continue
-
-        # NOTE: Skip enrollment targets - CPS underreports benefit enrollment
-        # NOTE: Skip age distribution - only available at state level (would conflict)
-
-    # Deduplicate by (variable, jurisdiction)
-    seen = set()
-    unique_targets = []
-    for t in filtered_targets:
-        key = (t["variable"], t.get("stratum", {}).get("jurisdiction", "us"))
-        if key not in seen:
-            seen.add(key)
-            unique_targets.append(t)
-    filtered_targets = unique_targets
-
-    print(f"\nFiltered to {len(filtered_targets)} non-overlapping targets")
-    print(f"  National population: {target_counts.get('national_pop', 0)}")
-    print(f"  State populations: {target_counts.get('state_pop', 0)}")
-    print(f"  National income: {target_counts.get('income', 0)}")
-    print(f"  National benefits: {target_counts.get('benefit', 0)}")
-
-    # Debug: show what targets we have
-    print("\nTargets being used (first 15):")
-    for t in filtered_targets[:15]:
         var = t["variable"]
-        jurisdiction = t.get("stratum", {}).get("jurisdiction", "us")
-        value = t["value"]
-        print(f"  {var} ({jurisdiction}): {value:,.0f}")
+        us_targets.append(t)
 
-    # Build calibration matrix
-    all_targets, df = loader.build_calibration_targets(df, filtered_targets)
+        # Categorize
+        if "population" in var.lower():
+            target_counts["population"] += 1
+        elif any(x in var.lower() for x in ["income", "gains", "pension", "social_security"]):
+            target_counts["income"] += 1
+        elif any(x in var.lower() for x in ["spending", "snap", "ssi", "eitc"]):
+            target_counts["benefit"] += 1
+        elif "enrollment" in var.lower():
+            target_counts["enrollment"] += 1
+        else:
+            target_counts["other"] += 1
 
-    # Run calibration (returns only the targets that were actually used)
-    df, used_targets = run_calibration(df, all_targets)
+    print(f"\nUsing {len(us_targets)} US targets (soft constraints)")
+    for cat, count in target_counts.items():
+        print(f"  {cat}: {count}")
 
-    # Validate only the targets that were actually calibrated
+    # Build calibration matrix from ALL US targets
+    all_targets, df = loader.build_calibration_targets(df, us_targets)
+
+    print(f"\nBuilt {len(all_targets)} indicator columns")
+
+    # Run SOFT calibration (minimizes total error, handles conflicts)
+    df, used_targets = run_soft_calibration(df, all_targets, regularization=0.01, max_iter=2000)
+
+    # Validate
     validate(df, used_targets)
 
     # Save
