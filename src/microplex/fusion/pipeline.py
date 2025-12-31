@@ -198,24 +198,32 @@ class FusionSynthesizer:
         if self.model is None:
             raise ValueError("Model not fitted. Call fit() first.")
 
-        # Generate normalized samples
+        # Generate samples (denormalized but still in log-space for transformed vars)
         samples = self.model.sample(
             n_samples=n_samples,
             clip_z=self.config.clip_z,
             device=self.config.device,
         )
 
-        # Convert to DataFrame and inverse transform
+        # Convert to DataFrame
         result = pd.DataFrame(samples, columns=self._variable_names)
 
         for var in self._variable_names:
             spec = COMMON_SCHEMA.get(var, {"transform": "none"})
-            if spec["type"] != "binary":
-                result[var] = apply_inverse_transform(
-                    result[var].values, spec.get("transform", "none")
-                )
+            transform = spec.get("transform", "none")
 
-            # Clip to valid ranges
+            # For log-transformed vars, clip in log space to prevent exp overflow
+            # exp(20) ≈ 500M which is a reasonable max for income variables
+            if transform == "log1p":
+                result[var] = result[var].clip(lower=0, upper=20)
+            elif transform == "signed_log":
+                result[var] = result[var].clip(lower=-20, upper=20)
+
+            # Apply inverse transform
+            if spec["type"] != "binary":
+                result[var] = apply_inverse_transform(result[var].values, transform)
+
+            # Clip to schema-defined ranges
             if "min" in spec:
                 result[var] = result[var].clip(lower=spec["min"])
             if "max" in spec:
