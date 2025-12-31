@@ -106,6 +106,74 @@ from microplex.calibration_harness import (
     run_pe_parity_suite,
 )
 
+# Core data models (from cosilico-microdata merge)
+from microplex.core import (
+    # Entities
+    EntityType,
+    FilingStatus,
+    RecordType,
+    Entity,
+    Person,
+    TaxUnit,
+    Household,
+    Family,
+    SPMUnit,
+    Record,
+    # Variables
+    DataType,
+    VariableRole,
+    LegalReference,
+    Variable,
+    VariableRegistry,
+    # Periods
+    PeriodType,
+    Period,
+    # Resolution
+    ResolutionLevel,
+    ResolutionConfig,
+    HardConcreteGate,
+    compress_dataset,
+    for_browser,
+    for_api,
+    for_research,
+)
+
+# Data sources (Polars-based CPS loading)
+from microplex.data_sources import (
+    CPSDataset,
+    download_cps_asec,
+    load_cps_asec_polars,
+    get_available_years,
+    PERSON_VARIABLES,
+    HOUSEHOLD_VARIABLES,
+    # Mappings
+    CoverageLevel,
+    CoverageGap,
+    VariableMapping,
+    get_mapping_metadata,
+    get_all_mappings,
+    coverage_summary,
+    # Transform
+    TransformedDataset,
+    transform_cps_to_cosilico,
+)
+
+# Validation
+from microplex.validation import (
+    AGI_BRACKETS,
+    FILING_STATUSES,
+    SOITargets,
+    get_soi_years,
+    load_soi_targets,
+    compute_validation_metrics,
+    ValidationResult,
+    validate_against_soi,
+    MetricComparison,
+    BaselineComparison,
+    compute_baseline_comparison,
+    export_comparison_json,
+)
+
 __version__ = "0.1.0"
 
 __all__ = [
@@ -181,4 +249,62 @@ __all__ = [
     "CalibrationHarness",
     "CalibrationResult",
     "run_pe_parity_suite",
+    # Core entities (from cosilico-microdata)
+    "EntityType",
+    "FilingStatus",
+    "RecordType",
+    "Entity",
+    "Person",
+    "TaxUnit",
+    "Household",
+    "Family",
+    "SPMUnit",
+    "Record",
+    # Variables
+    "DataType",
+    "VariableRole",
+    "LegalReference",
+    "Variable",
+    "VariableRegistry",
+    # Periods
+    "PeriodType",
+    "Period",
+    # Resolution
+    "ResolutionLevel",
+    "ResolutionConfig",
+    "HardConcreteGate",
+    "compress_dataset",
+    "for_browser",
+    "for_api",
+    "for_research",
+    # Data sources (Polars-based)
+    "CPSDataset",
+    "download_cps_asec",
+    "load_cps_asec_polars",
+    "get_available_years",
+    "PERSON_VARIABLES",
+    "HOUSEHOLD_VARIABLES",
+    # Mappings
+    "CoverageLevel",
+    "CoverageGap",
+    "VariableMapping",
+    "get_mapping_metadata",
+    "get_all_mappings",
+    "coverage_summary",
+    # Transform
+    "TransformedDataset",
+    "transform_cps_to_cosilico",
+    # Validation
+    "AGI_BRACKETS",
+    "FILING_STATUSES",
+    "SOITargets",
+    "get_soi_years",
+    "load_soi_targets",
+    "compute_validation_metrics",
+    "ValidationResult",
+    "validate_against_soi",
+    "MetricComparison",
+    "BaselineComparison",
+    "compute_baseline_comparison",
+    "export_comparison_json",
 ]
