@@ -279,6 +279,11 @@ class MaskedMAF:
             samples_t = self.flow.sample(ctx_t, clip_z=clip_z)
             samples_norm = samples_t.cpu().numpy()
 
+        # Clip normalized samples to prevent extreme outliers after flow transform
+        # The flow can produce values outside [-clip_z, clip_z] even with base clipping
+        if clip_z is not None:
+            samples_norm = np.clip(samples_norm, -clip_z, clip_z)
+
         # Denormalize
         samples = samples_norm * self.feature_stds_ + self.feature_means_
 

@@ -37,8 +37,8 @@ class FusionConfig:
     lr: float = 1e-3
     weight_decay: float = 1e-5
 
-    # Sampling
-    clip_z: float = 3.0
+    # Sampling - use 2.0 to avoid extreme outliers
+    clip_z: float = 2.0
 
     # Device
     device: str = "cpu"
@@ -109,6 +109,8 @@ class FusionSynthesizer:
         self._stacked: Optional[pd.DataFrame] = None
         self._mask: Optional[np.ndarray] = None
         self._variable_names: Optional[List[str]] = None
+        self._active_var_names: Optional[List[str]] = None
+        self._active_var_indices: Optional[List[int]] = None
 
     def add_survey(self, name: str, data: pd.DataFrame) -> "FusionSynthesizer":
         """Add a survey to the fusion.
@@ -125,6 +127,8 @@ class FusionSynthesizer:
         self._harmonized = None
         self._stacked = None
         self._mask = None
+        self._active_var_names = None
+        self._active_var_indices = None
         return self
 
     def harmonize(self) -> Tuple[pd.DataFrame, np.ndarray]:
@@ -157,7 +161,7 @@ class FusionSynthesizer:
         if self._stacked is None:
             self.harmonize()
 
-        # Prepare training data
+        # Prepare training data (filters to active variables)
         X, mask = self._prepare_training_data()
 
         # Get sample weights
@@ -165,9 +169,9 @@ class FusionSynthesizer:
         if "weight" in self._stacked.columns:
             weights = self._stacked["weight"].values
 
-        # Create and fit model
+        # Create and fit model on ACTIVE variables only
         self.model = MaskedMAF(
-            n_features=len(self._variable_names),
+            n_features=len(self._active_var_names),
             n_layers=self.config.n_layers,
             hidden_dim=self.config.hidden_dim,
         )
@@ -198,26 +202,27 @@ class FusionSynthesizer:
         if self.model is None:
             raise ValueError("Model not fitted. Call fit() first.")
 
-        # Generate samples (denormalized but still in log-space for transformed vars)
+        # Generate samples for ACTIVE variables only
         samples = self.model.sample(
             n_samples=n_samples,
             clip_z=self.config.clip_z,
             device=self.config.device,
         )
 
-        # Convert to DataFrame
-        result = pd.DataFrame(samples, columns=self._variable_names)
+        # Convert to DataFrame using active variable names
+        result = pd.DataFrame(samples, columns=self._active_var_names)
 
-        for var in self._variable_names:
+        # Apply inverse transforms and clipping for active variables
+        for var in self._active_var_names:
             spec = COMMON_SCHEMA.get(var, {"transform": "none"})
             transform = spec.get("transform", "none")
 
             # For log-transformed vars, clip in log space to prevent exp overflow
-            # exp(20) ≈ 500M which is a reasonable max for income variables
+            # exp(14) ≈ 1.2M which is reasonable for max income
             if transform == "log1p":
-                result[var] = result[var].clip(lower=0, upper=20)
+                result[var] = result[var].clip(lower=0, upper=14)
             elif transform == "signed_log":
-                result[var] = result[var].clip(lower=-20, upper=20)
+                result[var] = result[var].clip(lower=-14, upper=14)
 
             # Apply inverse transform
             if spec["type"] != "binary":
@@ -234,6 +239,11 @@ class FusionSynthesizer:
                 result[var] = result[var].round().astype(int)
             elif spec["type"] == "binary":
                 result[var] = (result[var] > 0.5).astype(int)
+
+        # Add inactive variables as 0
+        for var in self._variable_names:
+            if var not in self._active_var_names:
+                result[var] = 0.0
 
         # Add uniform weights (to be calibrated later)
         result["weight"] = 1.0
@@ -287,13 +297,27 @@ class FusionSynthesizer:
         )
 
     def _prepare_training_data(self) -> Tuple[np.ndarray, np.ndarray]:
-        """Prepare normalized training arrays."""
+        """Prepare normalized training arrays.
+
+        Only includes variables with at least some observations (>0% observed).
+        Variables with 0% observation rate cannot be learned from and are excluded.
+        """
         n_records = len(self._stacked)
-        n_features = len(self._variable_names)
+
+        # Filter to variables with at least some observations
+        obs_rates = self._mask.mean(axis=0)
+        self._active_var_indices = [i for i in range(len(self._variable_names)) if obs_rates[i] > 0]
+        self._active_var_names = [self._variable_names[i] for i in self._active_var_indices]
+
+        n_features = len(self._active_var_names)
+        print(f"\nActive variables for training: {n_features}/{len(self._variable_names)}")
+        print(f"  Excluded (0% observed): {[self._variable_names[i] for i in range(len(self._variable_names)) if obs_rates[i] == 0][:5]}...")
 
         X = np.zeros((n_records, n_features), dtype=np.float32)
+        active_mask = np.zeros((n_records, n_features), dtype=bool)
 
-        for i, var in enumerate(self._variable_names):
+        for j, i in enumerate(self._active_var_indices):
+            var = self._variable_names[i]
             values = self._stacked[var].values.copy()
             observed = self._mask[:, i]
 
@@ -305,12 +329,13 @@ class FusionSynthesizer:
             if spec["type"] != "binary":
                 values = apply_transform(values, spec.get("transform", "none"))
 
-            X[:, i] = values
+            X[:, j] = values
+            active_mask[:, j] = observed
 
         # Clean up any remaining NaN/inf
         X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
 
-        return X, self._mask
+        return X, active_mask
 
 
 def load_cps_for_fusion(year: int = 2023) -> pd.DataFrame:
