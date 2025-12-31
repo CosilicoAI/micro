@@ -37,6 +37,10 @@ dependencies = [
     "pandas>=2.0",
     "scipy>=1.10",
     "pyarrow>=14.0",  # For parquet file support
+    "huggingface_hub>=0.20",  # For PUF download
+    "polars>=0.20",  # For CPS loading
+    "httpx>=0.25",  # For data downloads
+    "pyyaml>=6.0",  # For configuration files
 ]
 
 [project.optional-dependencies]

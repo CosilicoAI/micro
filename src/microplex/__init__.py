@@ -138,7 +138,7 @@ from microplex.core import (
     for_research,
 )
 
-# Data sources (Polars-based CPS loading)
+# Data sources (Polars-based CPS loading + PUF)
 from microplex.data_sources import (
     CPSDataset,
     download_cps_asec,
@@ -156,6 +156,21 @@ from microplex.data_sources import (
     # Transform
     TransformedDataset,
     transform_cps_to_cosilico,
+    # PUF
+    load_puf,
+    download_puf,
+    PUF_VARIABLE_MAP,
+    UPRATING_FACTORS,
+    PUF_EXCLUSIVE_VARS,
+    SHARED_VARS,
+)
+
+# Fusion (multi-survey synthesis)
+from microplex.fusion import (
+    harmonize_surveys,
+    stack_surveys,
+    COMMON_SCHEMA,
+    MaskedMAF,
 )
 
 # Validation
@@ -277,7 +292,7 @@ __all__ = [
     "for_browser",
     "for_api",
     "for_research",
-    # Data sources (Polars-based)
+    # Data sources (Polars-based CPS + PUF)
     "CPSDataset",
     "download_cps_asec",
     "load_cps_asec_polars",
@@ -294,6 +309,18 @@ __all__ = [
     # Transform
     "TransformedDataset",
     "transform_cps_to_cosilico",
+    # PUF
+    "load_puf",
+    "download_puf",
+    "PUF_VARIABLE_MAP",
+    "UPRATING_FACTORS",
+    "PUF_EXCLUSIVE_VARS",
+    "SHARED_VARS",
+    # Fusion (multi-survey synthesis)
+    "harmonize_surveys",
+    "stack_surveys",
+    "COMMON_SCHEMA",
+    "MaskedMAF",
     # Validation
     "AGI_BRACKETS",
     "FILING_STATUSES",

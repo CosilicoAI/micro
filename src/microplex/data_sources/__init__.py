@@ -35,6 +35,17 @@ from microplex.data_sources.cps_transform import (
     TransformedDataset,
     transform_cps_to_cosilico,
 )
+from microplex.data_sources.puf import (
+    load_puf,
+    download_puf,
+    map_puf_variables,
+    uprate_puf,
+    expand_to_persons,
+    PUF_VARIABLE_MAP,
+    UPRATING_FACTORS,
+    PUF_EXCLUSIVE_VARS,
+    SHARED_VARS,
+)
 
 __all__ = [
     # CPS loading
@@ -62,4 +73,14 @@ __all__ = [
     # Transform
     "TransformedDataset",
     "transform_cps_to_cosilico",
+    # PUF loading
+    "load_puf",
+    "download_puf",
+    "map_puf_variables",
+    "uprate_puf",
+    "expand_to_persons",
+    "PUF_VARIABLE_MAP",
+    "UPRATING_FACTORS",
+    "PUF_EXCLUSIVE_VARS",
+    "SHARED_VARS",
 ]
