@@ -68,8 +68,11 @@ class JointFeatureExtractor(nn.Module):
         self.quantiles = torch.linspace(0.05, 0.95, n_quantiles)
         self.n_quantiles = n_quantiles
 
+        # 3 hidden layers (same as 6.61 baseline)
         self.shared = nn.Sequential(
             nn.Linear(n_features, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),

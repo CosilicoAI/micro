@@ -160,6 +160,39 @@ class HybridZIModel:
             loss.backward()
             optimizer.step()
 
+    def fit_no_zi(self, train_df, feature_cols, epochs=100):
+        """Train value DNN only (no ZI classifier)."""
+        # Prepare transitions
+        X_list, Y_list = [], []
+        for pid in train_df['person_id'].unique():
+            person = train_df[train_df['person_id'] == pid].sort_values('period')
+            values = person[feature_cols].values
+            for t in range(len(values) - 1):
+                X_list.append(values[t])
+                Y_list.append(values[t + 1])
+
+        X = np.array(X_list)
+        Y = np.array(Y_list)
+
+        # Normalize X
+        self.X_mean = X.mean(0)
+        self.X_std = X.std(0) + 1e-6
+        X_norm = (X - self.X_mean) / self.X_std
+
+        # No ZI classifiers
+        self.zi_models = [None] * self.n_features
+
+        # Train value DNN
+        X_torch = torch.tensor(X_norm, dtype=torch.float32)
+        Y_torch = torch.tensor(Y, dtype=torch.float32)
+
+        optimizer = torch.optim.Adam(self.value_model.parameters(), lr=1e-3)
+        for epoch in range(epochs):
+            optimizer.zero_grad()
+            loss = self.value_model.loss(X_torch, Y_torch)
+            loss.backward()
+            optimizer.step()
+
     def sample(self, x_raw):
         """Generate samples given raw input."""
         x_norm = (x_raw - self.X_mean) / self.X_std
@@ -294,7 +327,37 @@ def main():
     n_features = len(base_cols)
     n_synth = 500
 
-    # Define classifiers to test
+    # First test: No ZI (standard QDNN baseline)
+    print(f"\n{'=' * 70}")
+    print("Training: No ZI (Standard QDNN)")
+    print("=" * 70)
+
+    no_zi_model = HybridZIModel(None, n_features)  # None = no ZI classifier
+    no_zi_model.fit_no_zi(train_df, base_cols, epochs=100)
+
+    print(f"Generating {n_synth} synthetics...")
+    no_zi_synth = generate_panel_hybrid(no_zi_model, train_df, base_cols, n_synth, 12, seed=123)
+
+    print("\nZero rates:")
+    no_zi_zeros = {}
+    for col in zero_cols:
+        rate = (no_zi_synth[col] == 0).mean()
+        no_zi_zeros[col] = rate
+        print(f"  {col}: {rate:.1%}")
+
+    no_zi_dist = compute_coverage_with_indicators(holdout_df, no_zi_synth, train_df, base_cols, zero_cols)
+    print(f"\nCoverage (with zero indicators):")
+    print(f"  median: {np.median(no_zi_dist):.2f}")
+    print(f"  p90:    {np.percentile(no_zi_dist, 90):.2f}")
+
+    results = [{
+        'classifier': 'No ZI (Standard QDNN)',
+        'median_dist': np.median(no_zi_dist),
+        'p90_dist': np.percentile(no_zi_dist, 90),
+        **{f'{c}_zeros': no_zi_zeros[c] for c in zero_cols}
+    }]
+
+    # Define ZI classifiers to test
     classifiers = {
         'Logistic Regression': LogisticRegression(max_iter=1000),
         'MLP (64-64)': MLPClassifier(
@@ -313,8 +376,6 @@ def main():
             n_estimators=100, max_depth=5
         ),
     }
-
-    results = []
 
     for name, clf in classifiers.items():
         print(f"\n{'=' * 70}")
