@@ -58,3 +58,4 @@ Thumbs.db
 data/*.parquet
 data/raw/
 supabase/.temp/
+experiments/.cache/

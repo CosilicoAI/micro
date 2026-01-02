@@ -193,6 +193,14 @@ from microplex.validation import (
     export_comparison_json,
 )
 
+# Multi-source DGP (Data Generating Process)
+from microplex.dgp import (
+    PopulationDGP,
+    Survey,
+    EvalResult,
+    run_multi_source_benchmark,
+)
+
 __version__ = "0.1.0"
 
 __all__ = [
@@ -342,4 +350,9 @@ __all__ = [
     "BaselineComparison",
     "compute_baseline_comparison",
     "export_comparison_json",
+    # Multi-source DGP
+    "PopulationDGP",
+    "Survey",
+    "EvalResult",
+    "run_multi_source_benchmark",
 ]
