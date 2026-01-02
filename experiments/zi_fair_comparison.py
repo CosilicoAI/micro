@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import sys
+import time
 import torch
 import torch.nn as nn
 from sklearn.neighbors import NearestNeighbors
@@ -81,8 +82,12 @@ class JointFeatureExtractor(nn.Module):
         # Zero head (for joint training)
         self.zero_head = nn.Linear(hidden_dim, n_features)
 
-        # Quantile head
-        self.quantile_head = nn.Linear(hidden_dim, n_features * n_quantiles)
+        # Quantile head (deeper, matches 6.61 baseline)
+        self.quantile_head = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, n_features * n_quantiles),
+        )
 
     def forward(self, x):
         h = self.shared(x)
@@ -290,7 +295,7 @@ def main():
     holdout_df = df[df['person_id'].isin(persons[400:])]
 
     n_features = len(base_cols)
-    n_synth = 500
+    n_synth = 2000
 
     # All use the SAME jointly-trained features
     classifiers = {
@@ -305,44 +310,55 @@ def main():
     }
 
     results = []
+    n_runs = 3  # Fewer runs since n=2000 is slower
 
     for name, clf in classifiers.items():
         print(f"\n{'=' * 70}")
-        print(f"Training: {name}")
+        print(f"Training: {name} ({n_runs} runs)")
         print("=" * 70)
 
-        model = FairZIModel(n_features, zi_classifier=clf)
-        model.fit(train_df, base_cols, epochs=100)
+        medians = []
+        train_times = []
+        gen_times = []
 
-        print(f"Generating {n_synth} synthetics...")
-        synth_df = generate_panel(model, train_df, base_cols, n_synth, 12, seed=123)
+        for run in range(n_runs):
+            t0 = time.time()
+            model = FairZIModel(n_features, zi_classifier=clf)
+            model.fit(train_df, base_cols, epochs=100)
+            train_times.append(time.time() - t0)
 
-        print("\nZero rates:")
-        zero_rates = {}
-        for col in zero_cols:
-            rate = (synth_df[col] == 0).mean()
-            zero_rates[col] = rate
-            print(f"  {col}: {rate:.1%}")
+            t0 = time.time()
+            synth_df = generate_panel(model, train_df, base_cols, n_synth, 12, seed=123 + run)
+            gen_times.append(time.time() - t0)
 
-        dist = compute_coverage(holdout_df, synth_df, train_df, base_cols, zero_cols)
-        print(f"\nCoverage: median={np.median(dist):.2f}, p90={np.percentile(dist, 90):.2f}")
+            dist = compute_coverage(holdout_df, synth_df, train_df, base_cols, zero_cols)
+            medians.append(np.median(dist))
+            print(f"  Run {run+1}: median={np.median(dist):.2f}")
+
+        avg_median = np.mean(medians)
+        std_median = np.std(medians)
+        avg_train = np.mean(train_times)
+        avg_gen = np.mean(gen_times)
+
+        print(f"  → Mean: {avg_median:.2f} ± {std_median:.2f}")
 
         results.append({
             'classifier': name,
-            'median': np.median(dist),
-            'p90': np.percentile(dist, 90),
-            **{f'{c}_zeros': zero_rates[c] for c in zero_cols}
+            'median': avg_median,
+            'std': std_median,
+            'train_time': avg_train,
+            'gen_time': avg_gen,
         })
 
     print("\n" + "=" * 70)
-    print("SUMMARY (all using same jointly-trained features)")
+    print(f"SUMMARY ({n_runs} runs each)")
     print("=" * 70)
 
-    print(f"\n{'Classifier':<45} {'Median':>8} {'P90':>8} {'Income':>8} {'Wealth':>8} {'Divid':>8}")
-    print("-" * 85)
+    print(f"\n{'Classifier':<40} {'Median':>12} {'Train':>7} {'Gen':>7}")
+    print("-" * 70)
     for r in results:
-        print(f"{r['classifier']:<45} {r['median']:>8.2f} {r['p90']:>8.2f} "
-              f"{r['income_zeros']:>7.1%} {r['net_worth_zeros']:>7.1%} {r['dividend_income_zeros']:>7.1%}")
+        print(f"{r['classifier']:<40} {r['median']:>5.2f} ± {r['std']:<5.2f} "
+              f"{r['train_time']:>6.1f}s {r['gen_time']:>6.1f}s")
 
     print(f"\nTrue zero rates: income=23.8%, wealth=32.6%, dividends=71.8%")
 
