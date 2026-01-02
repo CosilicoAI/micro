@@ -121,6 +121,8 @@ class PopulationDGP:
         >>> dgp.evaluate(holdouts={"CPS": cps_holdout, "SCF": scf_holdout})
     """
 
+    name = "PopulationDGP"  # Can be overridden for display
+
     def __init__(
         self,
         n_estimators: int = 100,
