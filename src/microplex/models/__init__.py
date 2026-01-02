@@ -11,6 +11,8 @@ from .base import (
     SyntheticPopulation,
     ImputationResult,
 )
+from .trajectory_vae import TrajectoryVAE
+from .trajectory_transformer import TrajectoryTransformer
 
 __all__ = [
     "BaseSynthesisModel",
@@ -18,4 +20,6 @@ __all__ = [
     "BaseGraphModel",
     "SyntheticPopulation",
     "ImputationResult",
+    "TrajectoryVAE",
+    "TrajectoryTransformer",
 ]
