@@ -45,16 +45,21 @@ def to_trajectory_matrix(df: pd.DataFrame, feature_cols: list) -> np.ndarray:
 
 
 def get_nn_distances_raw(real_df: pd.DataFrame, synth_df: pd.DataFrame,
-                         feature_cols: list) -> np.ndarray:
-    """Distance from each real trajectory to nearest synthetic in raw space."""
+                         train_df: pd.DataFrame, feature_cols: list) -> np.ndarray:
+    """Distance from each real trajectory to nearest synthetic in raw space.
+
+    Scaler is fit on TRAINING data only.
+    """
     from sklearn.neighbors import NearestNeighbors
     from sklearn.preprocessing import StandardScaler
 
+    train_mat = to_trajectory_matrix(train_df, feature_cols)
     real_mat = to_trajectory_matrix(real_df, feature_cols)
     synth_mat = to_trajectory_matrix(synth_df, feature_cols)
 
     scaler = StandardScaler()
-    real_scaled = scaler.fit_transform(real_mat)
+    scaler.fit(train_mat)  # Fit on training only
+    real_scaled = scaler.transform(real_mat)
     synth_scaled = scaler.transform(synth_mat)
 
     nn = NearestNeighbors(n_neighbors=1).fit(synth_scaled)
