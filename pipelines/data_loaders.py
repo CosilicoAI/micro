@@ -1,12 +1,13 @@
 """Data loaders for US survey data.
 
-Loads and harmonizes CPS, PUF, and SIPP for multi-survey fusion.
+Loads and harmonizes CPS, PUF, SIPP, and PSID for multi-survey fusion.
 """
 
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
+import re
 
 # Try to import HuggingFace hub for downloading data
 try:
@@ -19,79 +20,145 @@ except ImportError:
 # Data paths
 COSILICO_DATA = Path("/Users/maxghenis/CosilicoAI/cosilico-data-sources")
 STORAGE_FOLDER = COSILICO_DATA / "storage"
+PSID_DATA_DIR = Path("/Users/maxghenis/CosilicoAI/psid/psid_data")
+
+
+# PSID variable mappings by year (codes change each survey wave)
+# Maps label patterns to year-specific column codes
+PSID_VAR_BY_YEAR = {
+    2021: {
+        "age": "ER78017",           # AGE OF REFERENCE PERSON
+        "sex": "ER78018",           # SEX OF REFERENCE PERSON (1=male, 2=female)
+        "state_fips": "ER78004",    # CURRENT STATE
+        "marital_status": "ER78025", # REFERENCE PERSON MARITAL STATUS
+        "labor_income": "ER81642",   # LABOR INCOME OF REF PERSON-2020
+        "interest_income": "ER81647", # REF PERSON INTEREST INCOME-2020
+        "dividend_income": "ER81645", # REF PERSON DIVIDENDS-2020
+        "rental_income": "ER81643",   # REF PERSON RENT INCOME-2020
+        "social_security": "ER81769", # REF PERSON SOCIAL SECURITY INCOME-2020
+        "total_family_income": "ER81775",  # TOTAL FAMILY INCOME-2020
+        "taxable_income": "ER81679",  # REF PERSN AND SPOUSE TAXABLE INCOME-2020
+        "food_stamps": "ER78848",     # VALUE OF FOOD STAMPS LAST YEAR
+        "interview_number": "ER78002", # Interview number (family ID)
+        "weight": "ER78244",          # Family weight (if exists)
+    },
+    2023: {
+        "age": "ER82018",           # AGE OF REFERENCE PERSON
+        "sex": "ER82019",           # SEX OF REFERENCE PERSON
+        "state_fips": "ER82004",    # CURRENT STATE
+        "marital_status": "ER82026", # REFERENCE PERSON MARITAL STATUS
+        "interview_number": "ER82002", # Interview number
+        # Note: Income variables for 2023 would be ER85xxx or similar
+        # Need to verify from codebook when available
+    },
+}
 
 
 # Variable harmonization mapping
 # Maps survey-specific variable names to common names
+# Note: CPS uses PolicyEngine's H5 format with specific variable names
+# PSID uses dynamic column names set during load_psid()
 VARIABLE_MAPPING = {
     # Demographics
     "age": {
         "cps": "age",
         "puf": "age",
         "sipp": "TAGE",
+        "psid": "age",  # Harmonized during load
     },
     "is_male": {
-        "cps": "sex",  # 1=male, 2=female in CPS
+        "cps": "sex",  # Already converted from is_female during load
         "puf": "is_male",
         "sipp": "ESEX",  # 1=male, 2=female
+        "psid": "is_male",  # Harmonized during load
     },
     "state_fips": {
-        "cps": "state_fips",
+        "cps": "state_fips",  # Household-level in CPS
         "puf": None,  # PUF doesn't have state
         "sipp": None,
+        "psid": "state_fips",  # PSID has state
     },
     "marital_status": {
         "cps": "marital_status",
         "puf": "filing_status",
         "sipp": "EMS",
+        "psid": "marital_status",
     },
     # Income
     "wage_income": {
-        "cps": "wage_salary_income",
+        "cps": "employment_income",  # CPS uses employment_income
         "puf": "employment_income",
         "sipp": "TPTOTINC",  # Total person income
+        "psid": "labor_income",  # PSID labor income
     },
     "self_employment_income": {
         "cps": "self_employment_income",
         "puf": "self_employment_income",
         "sipp": None,
+        "psid": None,  # PSID has business income but needs separate handling
     },
     "interest_income": {
-        "cps": "interest_income",
+        "cps": "interest_income",  # From taxable_interest_income
         "puf": "taxable_interest_income",
         "sipp": None,
+        "psid": "interest_income",
     },
     "dividend_income": {
-        "cps": "dividend_income",
+        "cps": "dividend_income",  # From qualified_dividend_income
         "puf": "qualified_dividend_income",
         "sipp": None,
+        "psid": "dividend_income",
     },
     "social_security_income": {
         "cps": "social_security_income",
         "puf": "social_security",
         "sipp": None,
+        "psid": "social_security",
     },
     "unemployment_compensation": {
         "cps": "unemployment_compensation",
         "puf": "taxable_unemployment_compensation",
         "sipp": None,
+        "psid": None,
     },
-    # PUF-specific income (detailed tax items)
+    # Investment/Asset income
     "rental_income": {
-        "cps": None,
+        "cps": "rental_income",
         "puf": "rental_income",
         "sipp": None,
+        "psid": "rental_income",
     },
     "capital_gains": {
         "cps": None,
         "puf": "long_term_capital_gains",
         "sipp": None,
+        "psid": None,
+    },
+    "farm_income": {
+        "cps": "farm_income",
+        "puf": None,
+        "sipp": None,
+        "psid": None,
     },
     # SIPP-specific
     "tip_income": {
         "cps": None,
         "puf": None,
         "sipp": "tip_income",  # Derived column
+        "psid": None,
+    },
+    # PSID-specific
+    "total_family_income": {
+        "cps": None,
+        "puf": None,
+        "sipp": None,
+        "psid": "total_family_income",
+    },
+    "food_stamps": {
+        "cps": None,
+        "puf": None,
+        "sipp": None,
+        "psid": "food_stamps",
     },
 }
 
@@ -100,25 +167,102 @@ def load_cps(
     path: Optional[Path] = None,
     sample_frac: float = 1.0,
     seed: int = 42,
+    use_policyengine: bool = True,
 ) -> pd.DataFrame:
-    """Load CPS data."""
-    if path is None:
-        path = COSILICO_DATA / "micro/us/cps_2024.parquet"
+    """Load CPS data.
 
-    print(f"Loading CPS from {path}...")
-    df = pd.read_parquet(path)
+    Args:
+        path: Path to CPS parquet file (if not using PolicyEngine)
+        sample_frac: Fraction of data to sample
+        seed: Random seed
+        use_policyengine: If True, load from policyengine_us_data package
+
+    Returns:
+        DataFrame with CPS data
+    """
+    if use_policyengine:
+        try:
+            from policyengine_us_data import CPS_2024
+            import h5py
+
+            print("Loading CPS via policyengine_us_data...")
+            cps = CPS_2024()
+
+            # Variables to load from CPS
+            cps_vars = {
+                "age": "age",
+                "is_female": "is_female",  # Will convert to is_male
+                "state_fips": "state_fips",
+                "employment_income": "employment_income",
+                "self_employment_income": "self_employment_income",
+                "taxable_interest_income": "interest_income",
+                "qualified_dividend_income": "dividend_income",
+                "rental_income": "rental_income",
+                "farm_income": "farm_income",
+                "household_weight": "household_weight",
+                "household_id": "household_id",
+            }
+
+            data = {}
+            for cps_name, common_name in cps_vars.items():
+                try:
+                    data[common_name] = np.array(cps.load(cps_name))
+                except Exception:
+                    pass
+
+            # Build DataFrame
+            if "age" not in data:
+                print("  Warning: Could not load CPS age variable")
+                return pd.DataFrame()
+
+            n_persons = len(data["age"])
+            df = pd.DataFrame(index=range(n_persons))
+
+            for col, values in data.items():
+                if len(values) == n_persons:
+                    df[col] = values
+                else:
+                    # Some variables are at household level - broadcast
+                    # For now, mark as NaN for person-level data
+                    df[col] = np.nan
+
+            # Convert is_female to is_male
+            if "is_female" in df.columns:
+                df["sex"] = (~df["is_female"].astype(bool)).astype(float)
+                df.drop("is_female", axis=1, inplace=True)
+
+            # Weight
+            if "household_weight" in df.columns:
+                df["weight"] = df["household_weight"].fillna(1.0)
+            else:
+                df["weight"] = 1.0
+
+        except ImportError:
+            print("  policyengine_us_data not available, trying parquet file...")
+            use_policyengine = False
+
+    if not use_policyengine:
+        if path is None:
+            path = COSILICO_DATA / "micro/us/cps_2024.parquet"
+
+        if not path.exists():
+            print(f"  Warning: CPS file not found: {path}")
+            return pd.DataFrame()
+
+        print(f"Loading CPS from {path}...")
+        df = pd.read_parquet(path)
+
+        # Weight column
+        if "march_supplement_weight" in df.columns:
+            df["weight"] = df["march_supplement_weight"]
+        elif "weight" not in df.columns:
+            df["weight"] = 1.0
 
     if sample_frac < 1.0:
         df = df.sample(frac=sample_frac, random_state=seed)
 
     # Add survey identifier
     df["_survey"] = "cps"
-
-    # Weight column
-    if "march_supplement_weight" in df.columns:
-        df["weight"] = df["march_supplement_weight"]
-    elif "weight" not in df.columns:
-        df["weight"] = 1.0
 
     print(f"  Loaded {len(df):,} CPS records")
     return df
@@ -229,6 +373,158 @@ def load_sipp(
     return df
 
 
+def parse_psid_do_file(do_file: Path) -> Dict[str, Tuple[int, int]]:
+    """Parse PSID Stata .do file to extract column specifications.
+
+    Returns dict mapping variable name -> (start, end) positions.
+    """
+    content = do_file.read_text()
+
+    # Find the infix section
+    infix_match = re.search(r'infix\s+(.*?)using', content, re.DOTALL | re.IGNORECASE)
+    if not infix_match:
+        raise ValueError(f"Could not find infix specification in {do_file}")
+
+    infix_section = infix_match.group(1)
+
+    # Parse column specs: [long] VARNAME start - end
+    pattern = r'(?:long\s+)?(\w+)\s+(\d+)\s*-\s*(\d+)'
+
+    columns = {}
+    for match in re.finditer(pattern, infix_section):
+        var_name = match.group(1).upper()
+        start = int(match.group(2))
+        end = int(match.group(3))
+        columns[var_name] = (start, end)
+
+    return columns
+
+
+def load_psid(
+    year: int = 2021,
+    data_dir: Optional[Path] = None,
+    sample_frac: float = 1.0,
+    seed: int = 42,
+) -> pd.DataFrame:
+    """Load PSID family file and harmonize to common schema.
+
+    PSID uses different variable codes each survey year, so we map them
+    to a common schema during load.
+
+    Args:
+        year: Survey year (2021 or 2023)
+        data_dir: Directory containing PSID files (defaults to PSID_DATA_DIR)
+        sample_frac: Fraction of data to sample
+        seed: Random seed for sampling
+
+    Returns:
+        DataFrame with harmonized variable names
+    """
+    if data_dir is None:
+        data_dir = PSID_DATA_DIR
+
+    data_dir = Path(data_dir)
+
+    # Find data file
+    patterns = [
+        f"FAM{year}ER.txt",
+        f"fam{year}er.txt",
+        f"FAM{year}ER.dta",
+        f"fam{year}er.dta",
+    ]
+
+    data_file = None
+    for pattern in patterns:
+        path = data_dir / pattern
+        if path.exists():
+            data_file = path
+            break
+
+    if data_file is None:
+        print(f"  Warning: PSID {year} data not found in {data_dir}")
+        return pd.DataFrame()
+
+    print(f"Loading PSID {year} from {data_file}...")
+
+    # Get year-specific variable mapping
+    var_map = PSID_VAR_BY_YEAR.get(year, {})
+    if not var_map:
+        print(f"  Warning: No variable mapping for PSID {year}")
+        return pd.DataFrame()
+
+    # Load based on file type
+    if data_file.suffix.lower() == ".dta":
+        df = pd.read_stata(data_file)
+        df.columns = df.columns.str.upper()
+    elif data_file.suffix.lower() == ".txt":
+        # Need .do file for fixed-width parsing
+        do_file = data_file.with_suffix(".do")
+        if not do_file.exists():
+            do_file = data_dir / f"FAM{year}ER.do"
+        if not do_file.exists():
+            print(f"  Warning: .do file not found for {data_file}")
+            return pd.DataFrame()
+
+        # Parse column specs from .do file
+        col_specs = parse_psid_do_file(do_file)
+
+        # Only load the columns we need
+        needed_cols = [v.upper() for v in var_map.values() if v]
+        available = [c for c in needed_cols if c in col_specs]
+
+        if not available:
+            print(f"  Warning: No mapped columns found in PSID {year}")
+            return pd.DataFrame()
+
+        # Build colspecs for pandas
+        colspecs = [(col_specs[c][0] - 1, col_specs[c][1]) for c in available]
+        names = available
+
+        df = pd.read_fwf(
+            data_file,
+            colspecs=colspecs,
+            names=names,
+            dtype=str,
+        )
+
+        # Convert to numeric
+        for col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    else:
+        print(f"  Warning: Unsupported file format: {data_file.suffix}")
+        return pd.DataFrame()
+
+    # Harmonize column names to common schema
+    result = pd.DataFrame(index=df.index)
+
+    for common_name, psid_code in var_map.items():
+        if psid_code and psid_code.upper() in df.columns:
+            if common_name == "sex":
+                # Convert 1=male, 2=female to is_male boolean
+                result["is_male"] = (df[psid_code.upper()] == 1).astype(float)
+            else:
+                result[common_name] = df[psid_code.upper()]
+
+    # Add metadata
+    result["_survey"] = "psid"
+    result["year"] = year
+
+    # Weight handling
+    if "weight" in result.columns:
+        pass  # Already have it
+    elif "ER78244" in df.columns:  # 2021 family weight
+        result["weight"] = df["ER78244"]
+    else:
+        result["weight"] = 1.0
+
+    if sample_frac < 1.0:
+        result = result.sample(frac=sample_frac, random_state=seed)
+
+    print(f"  Loaded {len(result):,} PSID records with {len(result.columns)} columns")
+
+    return result
+
+
 def harmonize_variable(
     df: pd.DataFrame,
     common_name: str,
@@ -251,6 +547,9 @@ def harmonize_variable(
         elif survey == "sipp":
             # SIPP: 1=male, 2=female
             values = (values == 1).astype(float)
+        elif survey == "psid":
+            # PSID already harmonized to is_male during load
+            pass
 
     return values
 
@@ -301,10 +600,21 @@ def stack_surveys(
 
 def load_all_surveys(
     cps_path: Optional[Path] = None,
+    psid_dir: Optional[Path] = None,
+    include_psid: bool = True,
+    include_puf: bool = True,
     sample_frac: float = 0.1,
     seed: int = 42,
 ) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
     """Load and stack all available surveys.
+
+    Args:
+        cps_path: Path to CPS parquet file
+        psid_dir: Directory containing PSID files
+        include_psid: Whether to include PSID
+        include_puf: Whether to include PUF
+        sample_frac: Fraction of data to sample
+        seed: Random seed
 
     Returns:
         stacked: Combined DataFrame with harmonized variables
@@ -318,14 +628,21 @@ def load_all_surveys(
         surveys["cps"] = cps
 
     # Load PUF
-    puf = load_puf(sample_frac=sample_frac, seed=seed)
-    if len(puf) > 0:
-        surveys["puf"] = puf
+    if include_puf:
+        puf = load_puf(sample_frac=sample_frac, seed=seed)
+        if len(puf) > 0:
+            surveys["puf"] = puf
 
     # Load SIPP
     sipp = load_sipp(sample_frac=sample_frac, seed=seed)
     if len(sipp) > 0:
         surveys["sipp"] = sipp
+
+    # Load PSID
+    if include_psid:
+        psid = load_psid(year=2021, data_dir=psid_dir, sample_frac=sample_frac, seed=seed)
+        if len(psid) > 0:
+            surveys["psid"] = psid
 
     # Define common variables to harmonize
     common_vars = [
@@ -341,7 +658,10 @@ def load_all_surveys(
         "unemployment_compensation",
         "rental_income",
         "capital_gains",
+        "farm_income",
         "tip_income",
+        "total_family_income",
+        "food_stamps",
     ]
 
     # Stack surveys
