@@ -18,6 +18,11 @@ from .panel_evolution import (
     create_lagged_features,
     create_history_features,
 )
+from .sequence_synthesizer import (
+    SequenceSynthesizer,
+    prepare_sequences,
+    collate_variable_length,
+)
 
 __all__ = [
     "BaseSynthesisModel",
@@ -30,4 +35,7 @@ __all__ = [
     "PanelEvolutionModel",
     "create_lagged_features",
     "create_history_features",
+    "SequenceSynthesizer",
+    "prepare_sequences",
+    "collate_variable_length",
 ]
