@@ -13,6 +13,11 @@ from .base import (
 )
 from .trajectory_vae import TrajectoryVAE
 from .trajectory_transformer import TrajectoryTransformer
+from .panel_evolution import (
+    PanelEvolutionModel,
+    create_lagged_features,
+    create_history_features,
+)
 
 __all__ = [
     "BaseSynthesisModel",
@@ -22,4 +27,7 @@ __all__ = [
     "ImputationResult",
     "TrajectoryVAE",
     "TrajectoryTransformer",
+    "PanelEvolutionModel",
+    "create_lagged_features",
+    "create_history_features",
 ]
