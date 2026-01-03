@@ -3,6 +3,8 @@ Data sources for microplex.
 
 This module provides loaders for various microdata sources:
 - CPS ASEC (Census Bureau's primary income/poverty survey)
+- PSID (Panel Study of Income Dynamics - longitudinal household survey)
+- PUF (Public Use File - tax return data)
 - CPS to Cosilico variable mappings with legal references
 - Data transformation utilities
 """
@@ -46,6 +48,16 @@ from microplex.data_sources.puf import (
     PUF_EXCLUSIVE_VARS,
     SHARED_VARS,
 )
+from microplex.data_sources.psid import (
+    PSIDDataset,
+    load_psid_panel,
+    extract_transition_rates,
+    get_age_specific_rates,
+    calibrate_marriage_rates,
+    calibrate_divorce_rates,
+    create_psid_fusion_source,
+    PSID_TO_MICROPLEX_VARS,
+)
 
 __all__ = [
     # CPS loading
@@ -83,4 +95,13 @@ __all__ = [
     "UPRATING_FACTORS",
     "PUF_EXCLUSIVE_VARS",
     "SHARED_VARS",
+    # PSID loading
+    "PSIDDataset",
+    "load_psid_panel",
+    "extract_transition_rates",
+    "get_age_specific_rates",
+    "calibrate_marriage_rates",
+    "calibrate_divorce_rates",
+    "create_psid_fusion_source",
+    "PSID_TO_MICROPLEX_VARS",
 ]
