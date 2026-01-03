@@ -188,23 +188,28 @@ def load_cps(
             print("Loading CPS via policyengine_us_data...")
             cps = CPS_2024()
 
-            # Variables to load from CPS
-            cps_vars = {
+            # Person-level variables
+            person_vars = {
                 "age": "age",
                 "is_female": "is_female",  # Will convert to is_male
-                "state_fips": "state_fips",
                 "employment_income": "employment_income",
                 "self_employment_income": "self_employment_income",
                 "taxable_interest_income": "interest_income",
                 "qualified_dividend_income": "dividend_income",
                 "rental_income": "rental_income",
                 "farm_income": "farm_income",
+                "person_household_id": "person_household_id",
+            }
+
+            # Household-level variables (need to be joined via person_household_id)
+            household_vars = {
+                "state_fips": "state_fips",
                 "household_weight": "household_weight",
                 "household_id": "household_id",
             }
 
             data = {}
-            for cps_name, common_name in cps_vars.items():
+            for cps_name, common_name in person_vars.items():
                 try:
                     data[common_name] = np.array(cps.load(cps_name))
                 except Exception:
@@ -219,12 +224,33 @@ def load_cps(
             df = pd.DataFrame(index=range(n_persons))
 
             for col, values in data.items():
-                if len(values) == n_persons:
-                    df[col] = values
-                else:
-                    # Some variables are at household level - broadcast
-                    # For now, mark as NaN for person-level data
-                    df[col] = np.nan
+                df[col] = values
+
+            # Load household-level data and join to persons
+            try:
+                hh_ids = np.array(cps.load("household_id"))  # Household-level
+                person_hh_ids = data.get("person_household_id")  # Person-level
+
+                if person_hh_ids is not None:
+                    # Create household lookup
+                    hh_data = {"household_id": hh_ids}
+                    for cps_name, common_name in household_vars.items():
+                        try:
+                            hh_data[common_name] = np.array(cps.load(cps_name))
+                        except Exception:
+                            pass
+
+                    hh_df = pd.DataFrame(hh_data)
+
+                    # Join to persons using person_household_id
+                    df = df.merge(
+                        hh_df,
+                        left_on="person_household_id",
+                        right_on="household_id",
+                        how="left"
+                    )
+            except Exception as e:
+                print(f"  Warning: Could not join household data: {e}")
 
             # Convert is_female to is_male
             if "is_female" in df.columns:
