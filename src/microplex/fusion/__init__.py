@@ -34,6 +34,7 @@ from .pipeline import (
     load_puf_for_fusion,
     synthesize_from_surveys,
 )
+from .multi_source_fusion import MultiSourceFusion
 
 __all__ = [
     # Low-level harmonization
@@ -53,4 +54,6 @@ __all__ = [
     "load_cps_for_fusion",
     "load_puf_for_fusion",
     "synthesize_from_surveys",
+    # Impute-stack fusion
+    "MultiSourceFusion",
 ]

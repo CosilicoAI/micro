@@ -1,0 +1,5 @@
+model,holdout,coverage
+impute_stack,sipp_panel,0.22845624372646817
+impute_stack,cps_crosssection,0.02389855534360669
+sipp_only,sipp_panel,0.23058750280602852
+cps_only,cps_crosssection,0.018061169988069302
