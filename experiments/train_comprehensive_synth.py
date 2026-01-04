@@ -104,57 +104,68 @@ def train_model(df, epochs=50, batch_size=2048, lr=1e-3, device='mps'):
     print("Preparing training data...")
     print("="*60)
 
-    # Identify variable types
+    # Predictor variables - demographics + lags for transition modeling
+    # Core predictors (all surveys)
+    predictors = ['age', 'is_male']
+
+    # Add lag predictors (SIPP only, but that's where transitions matter)
+    lag_predictors = ['job1_income_lag1', 'total_income_lag1']
+    for lag in lag_predictors:
+        if lag in df.columns and df[lag].notna().sum() > 10000:
+            predictors.append(lag)
+
+    # Filter to rows with valid predictors FIRST
+    mask = df[predictors].notna().all(axis=1)
+    train_subset = df[mask]
+    print(f"  Training subset: {len(train_subset):,} rows (have all predictors)")
+
+    # Identify variable types - only use vars observed in training subset
     # Continuous (ZI-QDNN) - income variables that can be zero or positive
     zi_vars = []
     for col in ['wage_income', 'self_employment_income', 'interest_income',
                 'dividend_income', 'rental_income', 'farm_income',
                 'total_income', 'job1_income', 'job2_income', 'job3_income',
                 'tip_income', 'social_security', 'total_family_income']:
-        if col in df.columns and df[col].notna().sum() > 1000:
+        if col in train_subset.columns and train_subset[col].notna().sum() > 1000:
             zi_vars.append(col)
 
-    # Categorical - discrete with >2 classes
+    # Categorical - discrete with >2 classes (use train_subset)
     cat_vars = {}
     for col in ['education', 'race', 'marital_status', 'relationship',
                 'state_fips', 'job1_occ', 'job1_ind', 'job2_occ', 'job2_ind']:
-        if col in df.columns and df[col].notna().sum() > 1000:
-            n_classes = int(df[col].max()) + 1
+        if col in train_subset.columns and train_subset[col].notna().sum() > 1000:
+            n_classes = int(train_subset[col].max()) + 1
             if n_classes > 2 and n_classes < 100:  # Reasonable number of classes
                 cat_vars[col] = n_classes
 
-    # Binary
+    # Binary (use train_subset) - exclude is_male since it's a predictor
     binary_vars = []
-    for col in ['is_male', 'hispanic', 'job_loss', 'job_gain']:
-        if col in df.columns and df[col].notna().sum() > 1000:
+    for col in ['hispanic', 'job_loss', 'job_gain']:
+        if col in train_subset.columns and train_subset[col].notna().sum() > 1000:
             binary_vars.append(col)
 
     print(f"\nVariable types:")
     print(f"  ZI-QDNN (continuous): {zi_vars}")
     print(f"  Categorical: {list(cat_vars.keys())}")
     print(f"  Binary: {binary_vars}")
+    print(f"  Predictors: {predictors}")
 
-    # Condition variables - use only those available across ALL surveys
-    # age and is_male are in all surveys
-    cond_vars = ['age', 'is_male']
-
-    print(f"  Conditioning: {cond_vars}")
-
-    # Build tensors
-    all_vars = cond_vars + zi_vars + list(cat_vars.keys()) + binary_vars
-
-    # Use only rows with valid conditioning vars
-    mask = df[cond_vars].notna().all(axis=1)
-    train_df = df[mask].copy()
+    # Use the pre-filtered train_subset
+    train_df = train_subset.copy()
+    all_vars = predictors + zi_vars + list(cat_vars.keys()) + binary_vars
     print(f"\n  Training rows: {len(train_df):,} (of {len(df):,})")
 
-    # Normalize conditioning variables
-    cond_data = train_df[cond_vars].values.astype(np.float32)
-    cond_means = np.nanmean(cond_data, axis=0)
-    cond_stds = np.nanstd(cond_data, axis=0) + 1e-6
-    cond_data = (cond_data - cond_means) / cond_stds
+    # Normalize predictor variables (including lags)
+    pred_data = train_df[predictors].values.astype(np.float32)
+    # Log-transform income lags before normalizing
+    for i, p in enumerate(predictors):
+        if 'income' in p:
+            pred_data[:, i] = np.log1p(np.maximum(pred_data[:, i], 0))
+    pred_means = np.nanmean(pred_data, axis=0)
+    pred_stds = np.nanstd(pred_data, axis=0) + 1e-6
+    pred_data = (pred_data - pred_means) / pred_stds
 
-    X = torch.tensor(cond_data, dtype=torch.float32).to(device)
+    X = torch.tensor(pred_data, dtype=torch.float32).to(device)
 
     # Build target tensors
     targets = {}
@@ -185,7 +196,7 @@ def train_model(df, epochs=50, batch_size=2048, lr=1e-3, device='mps'):
 
     # Model
     model = MixedSynth(
-        n_cond=len(cond_vars),
+        n_cond=len(predictors),
         zi_vars=zi_vars,
         cat_vars=cat_vars,
         binary_vars=binary_vars,
@@ -301,9 +312,9 @@ def train_model(df, epochs=50, batch_size=2048, lr=1e-3, device='mps'):
         'zi_vars': zi_vars,
         'cat_vars': cat_vars,
         'binary_vars': binary_vars,
-        'cond_vars': cond_vars,
-        'cond_means': cond_means,
-        'cond_stds': cond_stds,
+        'predictors': predictors,
+        'pred_means': pred_means,
+        'pred_stds': pred_stds,
         'quantiles': quantiles,
     }
 
@@ -316,30 +327,34 @@ def train_model(df, epochs=50, batch_size=2048, lr=1e-3, device='mps'):
 
 
 def generate_synthetic(model, model_info, n_samples, train_df, device='mps'):
-    """Generate synthetic samples by sampling conditioning from training data."""
+    """Generate synthetic samples by sampling predictors from training data."""
     print(f"\nGenerating {n_samples:,} synthetic samples...")
     gen_start = time.time()
 
     model.eval()
 
-    # Sample conditioning values from training data (not random!)
-    cond_vars = model_info['cond_vars']
-    train_cond = train_df[cond_vars].dropna()
-    sample_idx = np.random.choice(len(train_cond), n_samples, replace=True)
-    cond_data_raw = train_cond.iloc[sample_idx].values.astype(np.float32)
+    # Sample predictor values from training data
+    predictors = model_info['predictors']
+    train_pred = train_df[predictors].dropna()
+    sample_idx = np.random.choice(len(train_pred), n_samples, replace=True)
+    pred_data_raw = train_pred.iloc[sample_idx].values.astype(np.float32)
 
-    # Normalize
-    cond_data = (cond_data_raw - model_info['cond_means']) / model_info['cond_stds']
-    X = torch.tensor(cond_data, dtype=torch.float32).to(device)
+    # Log-transform income predictors, then normalize
+    pred_data = pred_data_raw.copy()
+    for i, p in enumerate(predictors):
+        if 'income' in p:
+            pred_data[:, i] = np.log1p(np.maximum(pred_data[:, i], 0))
+    pred_data = (pred_data - model_info['pred_means']) / model_info['pred_stds']
+    X = torch.tensor(pred_data, dtype=torch.float32).to(device)
 
     with torch.no_grad():
         out = model(X)
 
     result = {}
 
-    # Keep original conditioning values
-    for i, var in enumerate(cond_vars):
-        result[var] = cond_data_raw[:, i]
+    # Keep original predictor values (for reference)
+    for i, var in enumerate(predictors):
+        result[var] = pred_data_raw[:, i]
 
     # Sample ZI vars
     quantiles = model_info['quantiles']
