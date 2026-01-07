@@ -1,0 +1,301 @@
+{
+  "id": "exp_20260104_234612",
+  "name": "Multi-source ZI-QDNN v1",
+  "description": "CPS+SIPP+PSID fusion with zero-inflated quantile DNN. Predicts annual_income using demographics, survey dummies, and income lag.",
+  "created_at": "2026-01-04T23:46:12.668702",
+  "datasets": [
+    {
+      "survey": "cps",
+      "n_train": 115464,
+      "n_holdout": 28801,
+      "train_share": 0.8003604477870585,
+      "variables_available": [
+        "hispanic",
+        "state_fips",
+        "race",
+        "_survey",
+        "is_male",
+        "marital_status",
+        "dividend_income",
+        "education",
+        "person_id",
+        "farm_income",
+        "age",
+        "self_employment_income",
+        "weight",
+        "rental_income",
+        "wage_income",
+        "interest_income",
+        "annual_income",
+        "annual_income_lag",
+        "survey_cps",
+        "survey_sipp",
+        "survey_psid"
+      ],
+      "waves_used": [],
+      "year": null
+    },
+    {
+      "survey": "sipp",
+      "n_train": 323059,
+      "n_holdout": 80887,
+      "train_share": 0.7997578884306318,
+      "variables_available": [
+        "job1_occ",
+        "hispanic",
+        "state_fips",
+        "race",
+        "_survey",
+        "job1_income",
+        "is_male",
+        "marital_status",
+        "wave",
+        "total_income_lag1",
+        "total_income",
+        "job_gain",
+        "education",
+        "person_id",
+        "age",
+        "job_loss",
+        "weight",
+        "month",
+        "job1_ind",
+        "annual_income",
+        "annual_income_lag",
+        "survey_cps",
+        "survey_sipp",
+        "survey_psid"
+      ],
+      "waves_used": [
+        "2",
+        "3",
+        "1",
+        "4"
+      ],
+      "year": null
+    },
+    {
+      "survey": "psid",
+      "n_train": 7411,
+      "n_holdout": 1796,
+      "train_share": 0.8049310307374824,
+      "variables_available": [
+        "hispanic",
+        "state_fips",
+        "food_stamps",
+        "race",
+        "_survey",
+        "total_family_income",
+        "is_male",
+        "marital_status",
+        "year",
+        "dividend_income",
+        "taxable_income",
+        "education",
+        "person_id",
+        "age",
+        "weight",
+        "rental_income",
+        "wage_income",
+        "interview_number",
+        "social_security",
+        "interest_income",
+        "annual_income",
+        "annual_income_lag",
+        "survey_cps",
+        "survey_sipp",
+        "survey_psid"
+      ],
+      "waves_used": [],
+      "year": null
+    }
+  ],
+  "variables": [
+    {
+      "name": "age",
+      "sources": [
+        "cps",
+        "sipp",
+        "psid"
+      ],
+      "role": "predictor",
+      "dtype": "continuous",
+      "missing_handling": "fill_zero"
+    },
+    {
+      "name": "is_male",
+      "sources": [
+        "cps",
+        "sipp",
+        "psid"
+      ],
+      "role": "predictor",
+      "dtype": "categorical",
+      "missing_handling": "fill_zero"
+    },
+    {
+      "name": "annual_income_lag",
+      "sources": [
+        "sipp"
+      ],
+      "role": "predictor",
+      "dtype": "continuous",
+      "missing_handling": "fill_zero"
+    },
+    {
+      "name": "survey_cps",
+      "sources": [
+        "derived"
+      ],
+      "role": "predictor",
+      "dtype": "categorical",
+      "missing_handling": "fill_zero"
+    },
+    {
+      "name": "survey_sipp",
+      "sources": [
+        "derived"
+      ],
+      "role": "predictor",
+      "dtype": "categorical",
+      "missing_handling": "fill_zero"
+    },
+    {
+      "name": "survey_psid",
+      "sources": [
+        "derived"
+      ],
+      "role": "predictor",
+      "dtype": "categorical",
+      "missing_handling": "fill_zero"
+    },
+    {
+      "name": "race",
+      "sources": [
+        "sipp"
+      ],
+      "role": "predictor",
+      "dtype": "categorical",
+      "missing_handling": "fill_zero"
+    },
+    {
+      "name": "hispanic",
+      "sources": [
+        "sipp"
+      ],
+      "role": "predictor",
+      "dtype": "categorical",
+      "missing_handling": "fill_zero"
+    },
+    {
+      "name": "education",
+      "sources": [
+        "sipp"
+      ],
+      "role": "predictor",
+      "dtype": "categorical",
+      "missing_handling": "fill_zero"
+    },
+    {
+      "name": "marital_status",
+      "sources": [
+        "sipp",
+        "psid"
+      ],
+      "role": "predictor",
+      "dtype": "categorical",
+      "missing_handling": "fill_zero"
+    },
+    {
+      "name": "state_fips",
+      "sources": [
+        "cps",
+        "psid"
+      ],
+      "role": "predictor",
+      "dtype": "categorical",
+      "missing_handling": "fill_zero"
+    },
+    {
+      "name": "annual_income",
+      "sources": [
+        "cps",
+        "sipp",
+        "psid"
+      ],
+      "role": "target",
+      "dtype": "continuous",
+      "missing_handling": "fill_zero"
+    }
+  ],
+  "target_variable": "annual_income",
+  "model": {
+    "model_type": "zi-qdnn",
+    "architecture": {
+      "hidden_units": 256,
+      "n_layers": 2,
+      "n_quantiles": 19,
+      "zero_inflation": true
+    },
+    "training": {
+      "epochs": 30,
+      "batch_size": 4096,
+      "learning_rate": 0.001,
+      "optimizer": "adam",
+      "grad_clip": 1.0
+    },
+    "quantiles": [
+      0.05,
+      0.1,
+      0.15,
+      0.2,
+      0.25,
+      0.3,
+      0.35,
+      0.39999999999999997,
+      0.44999999999999996,
+      0.49999999999999994,
+      0.5499999999999999,
+      0.6,
+      0.65,
+      0.7,
+      0.75,
+      0.7999999999999999,
+      0.85,
+      0.9,
+      0.95
+    ]
+  },
+  "training_time_seconds": 25.698412895202637,
+  "coverage_results": [
+    {
+      "survey": "cps",
+      "n_holdout": 28801,
+      "coverage_median": 0.0,
+      "coverage_mean": 1.9604839614293988e-05,
+      "coverage_p95": 1.3757329872600575e-05,
+      "coverage_p99": 0.00011398930465869047
+    },
+    {
+      "survey": "sipp",
+      "n_holdout": 80887,
+      "coverage_median": 1.003138636543792e-06,
+      "coverage_mean": 6.15451336497252e-05,
+      "coverage_p95": 2.243754991126522e-05,
+      "coverage_p99": 0.0003603110204728722
+    },
+    {
+      "survey": "psid",
+      "n_holdout": 1796,
+      "coverage_median": 7.779442487482468e-07,
+      "coverage_mean": 0.003377036440867167,
+      "coverage_p95": 1.523132950180778e-05,
+      "coverage_p99": 9.82256975130022e-05
+    }
+  ],
+  "overall_coverage_median": 8.188886828928913e-07,
+  "overall_coverage_mean": 0.00010412254367491332,
+  "synthetic_data_path": "/Users/maxghenis/CosilicoAI/microplex/experiments/tracking/data/exp_20260104_234612_synthetic.parquet",
+  "holdout_coverage_path": "/Users/maxghenis/CosilicoAI/microplex/experiments/tracking/data/exp_20260104_234612_holdout_coverage.parquet",
+  "model_path": "/Users/maxghenis/CosilicoAI/microplex/experiments/tracking/data/exp_20260104_234612_model.pt"
+}
