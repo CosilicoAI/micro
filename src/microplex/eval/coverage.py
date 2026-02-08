@@ -86,8 +86,9 @@ def compute_prdc(
     covered = real_to_synth <= real_radii
     coverage = covered.mean()
 
-    # Recall: fraction of real points with synthetic in their ball
-    # (same as coverage for k-NN definition)
+    # Note: In Naeem et al.'s k-NN formulation, recall and coverage are
+    # identical. We set recall = coverage for API compatibility but only
+    # coverage is an independent metric.
     recall = coverage
 
     # Precision: fraction of synthetic points with real in their ball
