@@ -2,6 +2,10 @@
 
 All computed results referenced in the paper are derived here from
 benchmark JSON output. Use {eval}`r.some_value` in MyST markdown.
+
+Primary results come from multi-seed evaluation (benchmark_multi_seed.json)
+with means ± standard errors. Single-seed results (benchmark_full.json)
+are kept for backward compatibility.
 """
 
 import json
@@ -14,12 +18,16 @@ class MethodStats:
     name: str
     coverage: float
     precision: float
-    recall: float
     density: float
     elapsed: float
     sipp_coverage: float
     cps_coverage: float
     psid_coverage: float
+    # Multi-seed stats (None if single-seed only)
+    sipp_se: float = 0.0
+    cps_se: float = 0.0
+    psid_se: float = 0.0
+    n_seeds: int = 1
 
     @property
     def coverage_pct(self) -> str:
@@ -31,10 +39,14 @@ class MethodStats:
 
     @property
     def sipp_pct(self) -> str:
+        if self.n_seeds > 1 and self.sipp_se > 0:
+            return f"{self.sipp_coverage:.1%} ± {self.sipp_se:.1%}"
         return f"{self.sipp_coverage:.1%}"
 
     @property
     def cps_pct(self) -> str:
+        if self.n_seeds > 1 and self.cps_se > 0:
+            return f"{self.cps_coverage:.1%} ± {self.cps_se:.1%}"
         return f"{self.cps_coverage:.1%}"
 
     @property
@@ -119,6 +131,10 @@ class PaperResults:
     n_total: int = 630_216
     n_sources: int = 3
 
+    # Multi-seed info
+    n_seeds: int = 1
+    max_rows_per_source: int = 20_000
+
     # Synthesis derived comparisons
     @property
     def _synthesis_methods(self) -> list[MethodStats]:
@@ -194,19 +210,48 @@ class PaperResults:
         return self.rw_n_marginal_targets + self.rw_n_continuous_targets
 
 
-def _extract_method(data: dict, name: str) -> MethodStats:
+def _extract_method(data: dict, name: str, multi_seed_data: dict = None) -> MethodStats:
     m = data["methods"][name]
     source_map = {s["source"]: s for s in m["sources"]}
+
+    # If multi-seed data available, use means ± SE from there
+    sipp_cov = source_map.get("sipp", {}).get("coverage", 0)
+    cps_cov = source_map.get("cps", {}).get("coverage", 0)
+    psid_cov = source_map.get("psid", {}).get("coverage", 0)
+    sipp_se = 0.0
+    cps_se = 0.0
+    psid_se = 0.0
+    n_seeds = 1
+
+    if multi_seed_data and name in multi_seed_data.get("methods", {}):
+        ms = multi_seed_data["methods"][name]
+        n_seeds = multi_seed_data.get("n_seeds", 1)
+        if "sipp" in ms:
+            sipp_cov = ms["sipp"]["mean"]
+            sipp_se = ms["sipp"]["se"]
+        if "cps" in ms:
+            cps_cov = ms["cps"]["mean"]
+            cps_se = ms["cps"]["se"]
+        if "psid" in ms:
+            psid_cov = ms["psid"]["mean"]
+            psid_se = ms["psid"]["se"]
+
+    # Recompute mean coverage from per-source values
+    coverage = (sipp_cov + cps_cov + psid_cov) / 3
+
     return MethodStats(
         name=name,
-        coverage=m["mean_coverage"],
+        coverage=coverage,
         precision=m["mean_precision"],
-        recall=m["mean_recall"],
-        density=m["mean_density"],
+        density=m.get("mean_density", 0),
         elapsed=m["elapsed_seconds"],
-        sipp_coverage=source_map.get("sipp", {}).get("coverage", 0),
-        cps_coverage=source_map.get("cps", {}).get("coverage", 0),
-        psid_coverage=source_map.get("psid", {}).get("coverage", 0),
+        sipp_coverage=sipp_cov,
+        cps_coverage=cps_cov,
+        psid_coverage=psid_cov,
+        sipp_se=sipp_se,
+        cps_se=cps_se,
+        psid_se=psid_se,
+        n_seeds=n_seeds,
     )
 
 
@@ -225,6 +270,7 @@ def _extract_rw_method(data: dict, key: str) -> ReweightingMethodStats:
 def load_results(
     synthesis_path: str = None,
     reweighting_path: str = None,
+    multi_seed_path: str = None,
 ) -> PaperResults:
     results_dir = Path(__file__).parent.parent / "benchmarks" / "results"
 
@@ -232,6 +278,8 @@ def load_results(
         synthesis_path = str(results_dir / "benchmark_full.json")
     if reweighting_path is None:
         reweighting_path = str(results_dir / "reweighting_full.json")
+    if multi_seed_path is None:
+        multi_seed_path = str(results_dir / "benchmark_multi_seed.json")
 
     with open(synthesis_path) as f:
         synth_data = json.load(f)
@@ -239,19 +287,29 @@ def load_results(
     with open(reweighting_path) as f:
         rw_data = json.load(f)
 
+    # Load multi-seed data if available
+    multi_seed_data = None
+    ms_path = Path(multi_seed_path)
+    if ms_path.exists():
+        with open(ms_path) as f:
+            multi_seed_data = json.load(f)
+
+    n_seeds = multi_seed_data.get("n_seeds", 1) if multi_seed_data else 1
+
     return PaperResults(
-        # Synthesis
-        qrf=_extract_method(synth_data, "QRF"),
-        zi_qrf=_extract_method(synth_data, "ZI-QRF"),
-        qdnn=_extract_method(synth_data, "QDNN"),
-        zi_qdnn=_extract_method(synth_data, "ZI-QDNN"),
-        maf=_extract_method(synth_data, "MAF"),
-        zi_maf=_extract_method(synth_data, "ZI-MAF"),
+        # Synthesis (using multi-seed means when available)
+        qrf=_extract_method(synth_data, "QRF", multi_seed_data),
+        zi_qrf=_extract_method(synth_data, "ZI-QRF", multi_seed_data),
+        qdnn=_extract_method(synth_data, "QDNN", multi_seed_data),
+        zi_qdnn=_extract_method(synth_data, "ZI-QDNN", multi_seed_data),
+        maf=_extract_method(synth_data, "MAF", multi_seed_data),
+        zi_maf=_extract_method(synth_data, "ZI-MAF", multi_seed_data),
         k=synth_data["k"],
         holdout_frac=synth_data["holdout_frac"],
         n_generate=synth_data["n_generate"],
         seed=synth_data["seed"],
         total_elapsed=synth_data["total_elapsed_seconds"],
+        n_seeds=n_seeds,
         # Reweighting
         rw_ipf=_extract_rw_method(rw_data, "IPF"),
         rw_entropy=_extract_rw_method(rw_data, "Entropy"),

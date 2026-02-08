@@ -270,7 +270,6 @@ class TestBenchmarkRunner:
         assert mr.method_name == "QRF"
         assert 0 <= mr.mean_coverage <= 1
         assert 0 <= mr.mean_precision <= 1
-        assert 0 <= mr.mean_recall <= 1
         assert mr.mean_density >= 0
         assert mr.elapsed_seconds > 0
 

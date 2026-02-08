@@ -8,7 +8,7 @@ Compares multiple synthesis approaches on PRDC coverage outcomes:
 - TVAE (tabular variational autoencoder)
 
 All methods are evaluated on the same train/holdout splits using
-PRDC metrics (Precision, Recall, Density, Coverage) from Naeem et al. (2020).
+PDC metrics (Precision, Density, Coverage) adapted from Naeem et al. (2020).
 """
 
 from __future__ import annotations
@@ -52,11 +52,15 @@ class SynthesisMethod(Protocol):
 
 @dataclass
 class SourceResult:
-    """PRDC metrics for one source's holdout."""
+    """PDC metrics for one source's holdout.
+
+    Note: Naeem et al. (2020) define four metrics (PRDC), but in their k-NN
+    formulation recall and coverage are identical. We report three independent
+    metrics: Precision, Density, and Coverage.
+    """
 
     source_name: str
     precision: float
-    recall: float
     density: float
     coverage: float
     n_holdout: int
@@ -66,7 +70,6 @@ class SourceResult:
         return {
             "source": self.source_name,
             "precision": round(self.precision, 4),
-            "recall": round(self.recall, 4),
             "density": round(self.density, 4),
             "coverage": round(self.coverage, 4),
             "n_holdout": self.n_holdout,
@@ -96,10 +99,6 @@ class MethodResult:
         return self._mean_metric("precision")
 
     @property
-    def mean_recall(self) -> float:
-        return self._mean_metric("recall")
-
-    @property
     def mean_density(self) -> float:
         return self._mean_metric("density")
 
@@ -107,7 +106,6 @@ class MethodResult:
         return {
             "mean_coverage": round(self.mean_coverage, 4),
             "mean_precision": round(self.mean_precision, 4),
-            "mean_recall": round(self.mean_recall, 4),
             "mean_density": round(self.mean_density, 4),
             "elapsed_seconds": round(self.elapsed_seconds, 1),
             "sources": [s.to_dict() for s in self.source_results],
@@ -137,14 +135,14 @@ class BenchmarkResult:
         lines = [
             "Synthesis Method Benchmark",
             "=" * 75,
-            f"{'Method':<12} {'Coverage':>10} {'Precision':>10} {'Recall':>10} "
+            f"{'Method':<12} {'Coverage':>10} {'Precision':>10} "
             f"{'Density':>10} {'Time':>10}",
-            "-" * 75,
+            "-" * 65,
         ]
         for mr in sorted(self.method_results, key=lambda x: -x.mean_coverage):
             lines.append(
                 f"{mr.method_name:<12} {mr.mean_coverage:>10.1%} "
-                f"{mr.mean_precision:>10.1%} {mr.mean_recall:>10.1%} "
+                f"{mr.mean_precision:>10.1%} "
                 f"{mr.mean_density:>10.2f} {mr.elapsed_seconds:>9.1f}s"
             )
         lines.append("=" * 75)
@@ -155,12 +153,16 @@ class BenchmarkResult:
 
 
 def _compute_prdc(real: np.ndarray, synthetic: np.ndarray, k: int = 5) -> dict[str, float]:
-    """Compute Precision, Recall, Density, Coverage via k-NN."""
+    """Compute Precision, Density, Coverage via k-NN.
+
+    Adapted from Naeem et al. (2020) PRDC. In the k-NN formulation,
+    recall and coverage are identical, so we report only coverage.
+    """
     from sklearn.neighbors import NearestNeighbors
     from sklearn.metrics import pairwise_distances
 
     if len(real) < k + 1 or len(synthetic) < k + 1:
-        return {"precision": 0.0, "recall": 0.0, "density": 0.0, "coverage": 0.0}
+        return {"precision": 0.0, "density": 0.0, "coverage": 0.0}
 
     scaler = StandardScaler()
     real_s = scaler.fit_transform(real)
@@ -201,7 +203,6 @@ def _compute_prdc(real: np.ndarray, synthetic: np.ndarray, k: int = 5) -> dict[s
 
     return {
         "precision": precision,
-        "recall": coverage,  # recall = coverage in k-NN formulation
         "density": density,
         "coverage": coverage,
     }
@@ -776,7 +777,6 @@ class BenchmarkRunner:
                     source_results.append(SourceResult(
                         source_name=name,
                         precision=prdc["precision"],
-                        recall=prdc["recall"],
                         density=prdc["density"],
                         coverage=prdc["coverage"],
                         n_holdout=len(holdout_clean),

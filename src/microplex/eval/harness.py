@@ -96,20 +96,19 @@ class SynthesisEvalResult:
         lines = [
             "Synthesis Evaluation",
             "=" * 70,
-            f"{'Source':<12} {'Coverage':>10} {'Precision':>10} {'Recall':>10} "
+            f"{'Source':<12} {'Coverage':>10} {'Precision':>10} "
             f"{'Density':>10} {'Holdout':>8} {'Cols':>6}",
-            "-" * 70,
+            "-" * 64,
         ]
         for sc in self.source_coverages:
             lines.append(
                 f"{sc.source_name:<12} {sc.coverage:>10.1%} {sc.precision:>10.1%} "
-                f"{sc.recall:>10.1%} {sc.density:>10.2f} "
+                f"{sc.density:>10.2f} "
                 f"{sc.n_holdout:>8,} {len(sc.columns_evaluated):>6}"
             )
-        lines.append("-" * 70)
+        lines.append("-" * 64)
         lines.append(
-            f"{'MEAN':<12} {self.mean_coverage:>10.1%} {self.mean_precision:>10.1%} "
-            f"{self.mean_recall:>10.1%}"
+            f"{'MEAN':<12} {self.mean_coverage:>10.1%} {self.mean_precision:>10.1%}"
         )
         lines.append("=" * 70)
         return "\n".join(lines)
@@ -260,7 +259,9 @@ def _compute_prdc(
     synth_to_real_dist = synth_to_real_dist[:, 0]
 
     coverage = float((real_to_synth_dist <= real_radii).mean())
-    recall = coverage  # same definition for k-NN
+    # In the k-NN formulation, recall and coverage are identical.
+    # We keep recall in the output dict for API compatibility.
+    recall = coverage
     precision = float((synth_to_real_dist <= synth_radii).mean())
 
     # Density: average real points in each synthetic ball, normalized by k
