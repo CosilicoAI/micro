@@ -10,7 +10,16 @@ import numpy as np
 import pandas as pd
 import pytest
 import time
-from microplex.calibration import SparseCalibrator, HardConcreteCalibrator
+from microplex.calibration import SparseCalibrator
+
+try:
+    import l0  # noqa: F401
+    HAS_L0 = True
+except ImportError:
+    HAS_L0 = False
+
+if HAS_L0:
+    from microplex.calibration import HardConcreteCalibrator
 
 
 def generate_synthetic_population(n_records: int = 10000, seed: int = 42) -> pd.DataFrame:
@@ -109,6 +118,7 @@ class TestSparseCalibrationComparison:
         # Should have reasonable accuracy
         assert validation["max_error"] < 0.5, "Max error should be reasonable"
 
+    @pytest.mark.skipif(not HAS_L0, reason="l0-python not installed")
     def test_hard_concrete_calibrator_basic(self, population, targets):
         """Test HardConcreteCalibrator (gradient descent L0)."""
         marginal_targets, continuous_targets = targets
@@ -138,6 +148,7 @@ class TestSparseCalibrationComparison:
         # Should achieve some sparsity
         assert calibrator.get_sparsity() > 0.1, "Should achieve some sparsity"
 
+    @pytest.mark.skipif(not HAS_L0, reason="l0-python not installed")
     def test_comparison_at_same_sparsity(self, population, targets):
         """Compare both methods targeting similar sparsity levels."""
         marginal_targets, continuous_targets = targets
@@ -179,6 +190,7 @@ class TestSparseCalibrationComparison:
         print(f"Speed advantage: Cross-Category {time2/time1:.1f}x faster")
         print(f"Accuracy advantage: {'Hard Concrete' if val2['mean_error'] < val1['mean_error'] else 'Cross-Category'}")
 
+    @pytest.mark.skipif(not HAS_L0, reason="l0-python not installed")
     def test_scaling_behavior(self):
         """Test how both methods scale with population size."""
         sizes = [1000, 5000, 10000]
@@ -221,6 +233,8 @@ class TestSparseCalibrationComparison:
 
 if __name__ == "__main__":
     # Run comparison directly
+    from microplex.calibration import HardConcreteCalibrator as _HCC
+
     pop = generate_synthetic_population(n_records=5000)
     marginal_targets, continuous_targets = compute_targets(pop)
 
@@ -242,7 +256,7 @@ if __name__ == "__main__":
 
     # Hard Concrete
     print("\n--- Hard Concrete L0 ---")
-    hc_cal = HardConcreteCalibrator(
+    hc_cal = _HCC(
         lambda_l0=5e-4,
         epochs=1000,
         lr=0.1,

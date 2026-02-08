@@ -1,0 +1,234 @@
+---
+kernelspec:
+  name: python3
+  display_name: Python 3
+---
+
+# Microplex: Multi-source synthetic microdata via zero-inflated conditional models
+
+**Max Ghenis**
+
+max@cosilico.ai | Cosilico
+
+```{code-cell} python
+:tags: [remove-cell]
+
+from paper_results import r
+```
+
+## Abstract
+
+Government surveys observe different slices of the same population: the Current Population Survey (CPS) captures employment and income, the Survey of Income and Program Participation (SIPP) tracks employment dynamics, and the Panel Study of Income Dynamics (PSID) follows families longitudinally. No single survey observes all variables for all people. I present microplex, a framework for learning per-variable conditional distributions $P(v \mid V_{\text{shared}})$ from multiple surveys and generating synthetic records with complete variable coverage. Because each variable is modeled conditionally on shared demographics (age, sex), the resulting synthetic data preserves within-source marginals but does not learn cross-source correlations — a limitation I discuss. I compare six synthesis methods — quantile regression forests (QRF), quantile deep neural networks (QDNN), and masked autoregressive flows (MAF), each with and without zero-inflation (ZI) handling — using Precision, Density, and Coverage metrics adapted from {cite:t}`naeem2020reliable`, evaluated against holdouts from each source survey across {eval}`r.n_seeds` random seeds. ZI-QRF achieves the highest SIPP coverage ({eval}`r.zi_qrf.sipp_pct`) while ZI-MAF achieves the highest CPS coverage ({eval}`r.zi_maf.cps_pct`), but the key finding is architectural: zero-inflation handling lifts MAF coverage by {eval}`r.zi_maf_vs_maf_lift` and QDNN by {eval}`r.zi_qdnn_vs_qdnn_lift`, while barely affecting QRF ({eval}`r.zi_qrf_vs_qrf_lift`). I also compare five calibration methods for reweighting synthetic populations, finding that entropy balancing achieves the lowest mean relative error ({eval}`r.rw_entropy.mean_error_pct`). Code is available at [github.com/CosilicoAI/microplex](https://github.com/CosilicoAI/microplex).
+
+## Introduction
+
+Policy microsimulation requires detailed individual records spanning demographics, income, taxes, transfers, wealth, and health. No single survey covers all domains. The Current Population Survey (CPS) Annual Social and Economic Supplement (ASEC) {cite:p}`flood2020integrated` captures {eval}`f"{r.n_cps:,}"` persons with employment and income variables. The Survey of Income and Program Participation (SIPP) {cite:p}`census2023sipp` adds employment dynamics and income detail for {eval}`f"{r.n_sipp:,}"` persons. The Panel Study of Income Dynamics (PSID) {cite:p}`psid2023` provides longitudinal structure for {eval}`f"{r.n_psid:,}"` persons. Administrative sources (Internal Revenue Service Statistics of Income, Social Security Administration earnings records) cover entire populations but with narrower variable sets.
+
+Current approaches to combining these sources — sequential imputation, statistical matching, or record linkage — suffer from well-documented limitations. Synthetic data approaches {cite:p}`rubin1993statistical,drechsler2011synthetic` and multiple imputation {cite:p}`raghunathan2003multiple` address disclosure concerns but typically operate on single surveys. Sequential chaining (e.g., imputing CPS variables onto the American Community Survey, then Public Use File variables onto CPS) loses joint distributional structure at each step {cite:p}`meinfelder2011simulation`. Statistical matching preserves marginals but distorts correlations {cite:p}`dorazio2006statistical`. Record linkage requires common identifiers rarely available across surveys.
+
+I make three contributions:
+
+1. **Multi-source conditional synthesis framework.** I formalize the problem of learning per-variable conditionals $P(v \mid V_{\text{shared}})$ from surveys that each observe different subsets of variables. This approach generates records with complete variable coverage, though it assumes conditional independence across sources given shared variables — a strong assumption whose implications I evaluate.
+
+2. **Zero-inflation (ZI) as architectural choice.** I show that ZI handling — a two-stage model that separately predicts whether a variable is zero vs. its positive-value distribution — provides large coverage gains for neural methods (MAF: +{eval}`r.zi_maf_vs_maf_lift`; QDNN: +{eval}`r.zi_qdnn_vs_qdnn_lift`) while barely affecting tree-based methods (QRF: +{eval}`r.zi_qrf_vs_qrf_lift`), suggesting it is more impactful than the choice of base model for economic survey data with mass-at-zero variables.
+
+3. **Cross-source holdout evaluation.** I evaluate synthetic data quality using Precision, Density, and Coverage metrics adapted from {cite:t}`naeem2020reliable`, computed against holdouts from each source survey separately, revealing that coverage varies dramatically across sources — a pattern obscured by aggregate metrics.
+
+## Methods
+
+### Problem formulation
+
+Let $\mathcal{S} = \{S_1, \ldots, S_K\}$ be $K$ surveys, each observing a subset of variables $V_k \subset V$ for $n_k$ records drawn from the same population. A set of shared variables $V_{\text{shared}} = \bigcap_k V_k$ appears in all surveys (e.g., age, sex). For each non-shared variable $v \in V_k \setminus V_{\text{shared}}$, I learn $P(v \mid V_{\text{shared}})$ from survey $S_k$.
+
+This factorization implies a conditional independence assumption: non-shared variables from different sources are independent given $V_{\text{shared}}$. Furthermore, variables within the same source are also generated independently conditional on $V_{\text{shared}}$, destroying within-source correlations that the original survey captures. The resulting synthetic joint distribution is $P(V) = P(V_{\text{shared}}) \prod_{k} \prod_{v \in V_k \setminus V_{\text{shared}}} P(v \mid V_{\text{shared}})$. This preserves each marginal conditional but does not capture either cross-source or within-source correlations beyond what the shared variables mediate. The quality of this approximation depends on the richness of the shared variable set — with only demographic variables, it is coarse; with employment, education, and filing status added, it would improve substantially.
+
+To generate synthetic records, I:
+1. Sample shared variables from the pooled empirical distribution (with small Gaussian perturbation, $\sigma=0.1$, to smooth the discrete sample)
+2. For each non-shared variable, sample from its learned conditional distribution
+3. Calibrate weights against administrative targets
+
+### Zero-inflation handling
+
+Economic variables exhibit mass-at-zero: many people have zero values for income sources, benefit receipts, or tax credits. For a variable $y$ with zero fraction $\pi_0 \geq \theta$ (I use $\theta = 0.1$), the two-stage hurdle model decomposes generation into:
+
+$$
+y \sim \begin{cases} 0 & \text{with probability } \hat{\pi}_0(x) \\ g(x) & \text{with probability } 1 - \hat{\pi}_0(x) \end{cases}
+$$
+
+where $\hat{\pi}_0(x)$ is a random forest classifier predicting zero vs. non-zero, and $g(x)$ is the base model (QRF, QDNN, or MAF) trained only on positive values. This two-part decomposition follows the hurdle model tradition {cite:p}`mullahy1986specification` rather than the zero-inflated count model of {cite:t}`lambert1992zero`, since the economic variables here are continuous with mass at zero.
+
+### Base models
+
+I compare three model families, each with and without zero-inflation:
+
+**Quantile regression forest (QRF).** Following {cite:t}`meinshausen2006quantile`, I fit a random forest that learns the full conditional distribution $P(y \mid x)$ by retaining quantile information from training observations in leaf nodes. At generation time, I sample a random quantile $\tau \sim \text{Uniform}(0.1, 0.9)$ and return the corresponding predicted quantile. The quantile range is truncated to avoid extreme tail values; this reduces tail coverage but improves stability.
+
+**Quantile deep neural network (QDNN).** A multi-layer perceptron trained with pinball loss {cite:p}`koenker2001quantile` to predict quantiles $\hat{q}_\tau(x)$ for $\tau \in \{0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95\}$. At generation time, I sample a random quantile index and return the corresponding prediction.
+
+**Masked autoregressive flow (MAF).** A normalizing flow {cite:p}`papamakarios2017masked` that learns the full conditional density $p(y \mid x)$ via invertible transformations. I apply log transformation to positive values before standardization and train with maximum likelihood. Generated values are clipped to non-negative via `max(x, 0)`, which for the non-ZI variant creates an artificial mass at zero that may inflate the apparent ZI benefit.
+
+### Evaluation metrics
+
+I evaluate using Precision, Density, and Coverage (PDC) adapted from the PRDC framework of {cite:t}`naeem2020reliable`, originally developed for evaluating generative image models. In Naeem et al.'s $k$-nearest-neighbor formulation, recall and coverage are mathematically identical, so I report only three independent metrics.
+
+For each source survey $S_k$:
+1. Subsample to at most {eval}`f"{r.max_rows_per_source:,}"` records per source (to keep computation tractable)
+2. Split into 80% train / 20% holdout
+3. Train all methods on the training portions
+4. Generate synthetic records
+5. Compute PDC on columns present in $S_k$
+
+**Coverage** — the primary metric — measures the fraction of real holdout points that have at least one synthetic neighbor within their $k$-th nearest-neighbor radius (I use $k={eval}`r.k`$). The radius is adaptive and per-point: dense regions of the real manifold have smaller radii, sparse regions larger. All distances are computed in standardized Euclidean space.
+
+All results are reported as means ± standard errors across {eval}`r.n_seeds` random seeds.
+
+### Calibration via reweighting
+
+After synthesis, I calibrate the microdata against administrative targets by adjusting record weights. I compare five methods spanning two families.
+
+**Calibration methods** solve for weights that match both categorical marginals and continuous targets simultaneously. Iterative proportional fitting (IPF) {cite:p}`deming1940least` is the classical raking algorithm that alternately adjusts weights to match each marginal target. Entropy balancing {cite:p}`hainmueller2012entropy` minimizes the Kullback-Leibler divergence from the original weights subject to target constraints: $\min_w \sum_i w_i \log(w_i / w_i^0)$ s.t. $Aw = b$. SparseCalibrator, building on calibration estimator theory {cite:p}`deville1992calibration`, selects a sparse subset of records via cross-category proportional sampling, then calibrates the selected subset using iterative proportional fitting to match both categorical and continuous targets.
+
+**Sparse optimization methods** ($L_1$-sparse and $L_0$-sparse) minimize the weight norm subject to categorical constraints only, solving $\min_w \|w\|_p$ s.t. $Aw = b$ for subset selection rather than population calibration.
+
+## Data
+
+I use three public-use surveys stacked into a common format ({eval}`f"{r.n_total:,}"` total records across all survey years):
+
+| Source | Records | Variables | Domain |
+|--------|--------:|----------:|--------|
+| SIPP | {eval}`f"{r.n_sipp:,}"` | 24 | Employment dynamics, job transitions, income |
+| CPS ASEC | {eval}`f"{r.n_cps:,}"` | 10 | Wage and non-wage income, demographics |
+| PSID | {eval}`f"{r.n_psid:,}"` | 15 | Longitudinal income, wealth, program participation |
+
+Shared conditioning variables across all sources: age and sex (encoded as binary `is_male`). SIPP-specific variables include multi-job income, occupation/industry codes, job transitions, education, race, and marital status. CPS-specific variables include wage, dividend, interest, rental, farm, and self-employment income. PSID-specific variables include food stamp receipt, Social Security income, taxable income, and total family income.
+
+For the benchmark, each source is subsampled to at most {eval}`f"{r.max_rows_per_source:,}"` records before the train/holdout split, keeping computation tractable while retaining sufficient data for reliable coverage estimates. The full dataset is available at [huggingface.co/datasets/nikhil-woodruff/microplex-benchmark-data](https://huggingface.co/datasets/nikhil-woodruff/microplex-benchmark-data).
+
+## Results
+
+### Synthesis: method comparison
+
+```{code-cell} python
+:tags: [remove-input]
+
+import json
+import pandas as pd
+from pathlib import Path
+
+# Load multi-seed results for primary table
+with open(Path("..") / "benchmarks" / "results" / "benchmark_multi_seed.json") as f:
+    ms_data = json.load(f)
+
+rows = []
+for name, sources in ms_data["methods"].items():
+    sipp = sources.get("sipp", {})
+    cps = sources.get("cps", {})
+    psid = sources.get("psid", {})
+    rows.append({
+        "Method": name,
+        "SIPP cov.": f"{sipp.get('mean', 0):.1%} ± {sipp.get('se', 0):.1%}",
+        "CPS cov.": f"{cps.get('mean', 0):.1%} ± {cps.get('se', 0):.1%}",
+        "PSID cov.": f"{psid.get('mean', 0):.0%}",
+    })
+df = pd.DataFrame(rows).sort_values("SIPP cov.", ascending=False)
+df.index = range(1, len(df) + 1)
+df
+```
+
+Per-source coverage varies dramatically across surveys. ZI-QRF achieves the highest SIPP coverage ({eval}`r.zi_qrf.sipp_pct`), while ZI-MAF leads on CPS ({eval}`r.zi_maf.cps_pct`). PSID coverage is 0% for all methods, reflecting a fundamental limitation of the current shared variable set: with only 2 conditioning variables (age, sex) and 15 PSID-specific columns, the model cannot learn the 15-dimensional joint structure from demographics alone.
+
+I report per-source results as the primary metrics rather than aggregating across sources, since averaging with a degenerate 0% source obscures the pattern.
+
+### The zero-inflation effect
+
+The differential impact of zero-inflation across model families is the most consistent pattern in the results:
+
+| Base model | Without ZI | With ZI | Lift |
+|-----------|-----------|---------|------|
+| MAF | {eval}`r.maf.coverage_pct` | {eval}`r.zi_maf.coverage_pct` | +{eval}`r.zi_maf_vs_maf_lift` |
+| QDNN | {eval}`r.qdnn.coverage_pct` | {eval}`r.zi_qdnn.coverage_pct` | +{eval}`r.zi_qdnn_vs_qdnn_lift` |
+| QRF | {eval}`r.qrf.coverage_pct` | {eval}`r.zi_qrf.coverage_pct` | +{eval}`r.zi_qrf_vs_qrf_lift` |
+
+MAF without zero-inflation ({eval}`r.maf.coverage_pct` mean coverage) performs worse than plain QRF ({eval}`r.qrf.coverage_pct`). Adding zero-inflation lifts MAF coverage substantially ({eval}`r.zi_maf.coverage_pct`). This is consistent with the hypothesis that normalizing flows cannot jointly model the zero mass and positive-value density as a single distribution, but perform well on the smooth positive-value conditional once freed from this burden. Note that the non-ZI MAF also clips generated values to non-negative via `max(x, 0)`, which creates an artificial zero mass; the ZI lift for MAF thus conflates a genuine methodological improvement with partial mitigation of this clipping artifact.
+
+QRF is naturally robust to zero-inflation because quantile forests can represent mixed distributions — leaf nodes containing both zero and positive training observations produce quantile predictions that implicitly capture the zero mass. The minimal ZI lift for QRF (+{eval}`r.zi_qrf_vs_qrf_lift`) reflects that forests already handle this case.
+
+### Speed-accuracy tradeoff
+
+ZI-QRF completes in {eval}`r.zi_qrf.time_str`, compared to ZI-MAF's {eval}`r.zi_maf.time_str` (ZI-MAF is {eval}`r.zi_speedup_over_maf` slower). ZI-QRF achieves higher SIPP coverage ({eval}`r.zi_qrf.sipp_pct` vs. {eval}`r.zi_maf.sipp_pct`), while ZI-MAF has a {eval}`f"{r.zi_maf.cps_coverage - r.zi_qrf.cps_coverage:.0%}"` point CPS coverage advantage ({eval}`r.zi_maf.cps_pct` vs. {eval}`r.zi_qrf.cps_pct`). For production pipelines requiring frequent regeneration, ZI-QRF offers a compelling speed-accuracy tradeoff.
+
+### Reweighting calibration
+
+I evaluate reweighting methods on {eval}`f"{r.rw_n_records:,}"` records with {eval}`r.rw_n_targets_total` calibration targets ({eval}`r.rw_n_marginal_targets` categorical marginals spanning age group and sex, plus {eval}`r.rw_n_continuous_targets` continuous target for total population weight). Target values are perturbed from the sample distribution by 10-30% to simulate calibration to known population totals. This is a controlled evaluation of algorithmic performance; results may differ when calibrating against real administrative targets.
+
+```{code-cell} python
+:tags: [remove-input]
+
+import json
+import pandas as pd
+from pathlib import Path
+
+with open(Path("..") / "benchmarks" / "results" / "reweighting_full.json") as f:
+    rw_data = json.load(f)
+
+rows = []
+for name, m in rw_data["methods"].items():
+    rows.append({
+        "Method": name,
+        "Mean rel. error": f"{m['mean_relative_error']:.1%}",
+        "Max rel. error": f"{m['max_relative_error']:.1%}",
+        "Weight CV": f"{m['weight_cv']:.3f}",
+        "Time (s)": f"{m['elapsed_seconds']:.2f}",
+    })
+df = pd.DataFrame(rows)
+# Show calibration methods first (sorted by mean error), then sparse
+cal_methods = df[df["Method"].isin(["Entropy", "IPF", "SparseCalibrator"])]
+sparse_methods = df[~df["Method"].isin(["Entropy", "IPF", "SparseCalibrator"])]
+df = pd.concat([cal_methods.sort_values("Mean rel. error"), sparse_methods])
+df.index = range(1, len(df) + 1)
+df
+```
+
+Among calibration methods, entropy balancing achieves the lowest mean relative error ({eval}`r.rw_entropy.mean_error_pct`), {eval}`r.entropy_vs_ipf_error_reduction` lower than IPF ({eval}`r.rw_ipf.mean_error_pct`). SparseCalibrator matches IPF accuracy while producing {eval}`r.sparse_cal_cv_vs_ipf` lower weight coefficient of variation ({eval}`r.rw_sparse_cal.cv_str` vs. {eval}`r.rw_ipf.cv_str`), meaning smoother weights that are less likely to amplify noise in downstream estimates.
+
+The $L_1$- and $L_0$-sparse methods show high errors ({eval}`r.rw_l1.mean_error_pct`) because they optimize for subset selection (minimizing $\|w\|_p$) rather than population calibration. They satisfy categorical constraints but cannot match continuous targets, making them unsuitable for general-purpose calibration despite their sparsity advantages.
+
+The tradeoff between entropy and SparseCalibrator is instructive: entropy achieves lower mean error but higher max error ({eval}`r.rw_entropy.max_error_pct` vs. {eval}`r.rw_sparse_cal.max_error_pct`), while SparseCalibrator provides more uniform error across targets with smoother weights.
+
+## Discussion
+
+### Zero-inflation as architectural choice
+
+The most consistent finding is that zero-inflation handling provides large coverage gains for neural methods while barely affecting tree-based methods. A two-stage decomposition — random forest classifier {cite:p}`breiman2001random` for zero vs. non-zero, followed by a conditional model on positive values only — transforms underperforming MAF and QDNN methods into competitive performers. The zero-inflation lift exceeds the between-model-family differences for neural methods.
+
+The mechanism follows from the structure of economic survey variables. Income sources (wages, dividends, transfers) are zero for large population fractions. Without ZI, a normalizing flow or neural network must simultaneously model: (a) the probability of being a recipient, and (b) the distribution of amounts conditional on receipt. These are fundamentally different modeling tasks — one is a classification boundary, the other a continuous density estimation — and conflating them degrades both. Tree-based methods handle this naturally through leaf node composition.
+
+### Limitations
+
+**Shared variable bottleneck.** With only age and sex as shared conditioning variables, the model cannot capture the covariance structure that depends on education, occupation, geography, and other demographics. The 0% PSID coverage across all methods demonstrates this limitation. Expanding shared variables is the highest-priority improvement.
+
+**Conditional independence assumption.** Non-shared variables are generated independently conditional on shared variables — both across and within sources. The synthetic joint distribution is $\prod_v P(v \mid V_{\text{shared}})$, which preserves each marginal conditional but destroys all correlations not mediated by the shared variables. For microsimulation applications, the correlation between (e.g.) SIPP program participation and CPS income components is precisely what is needed. The current framework does not capture these relationships, and I do not evaluate cross-source correlation fidelity. A full joint model — via a unified latent space, conditional dependency chains, or copula-based approaches {cite:p}`dorazio2006statistical` — would address this at the cost of additional complexity.
+
+**Survey weights not used in training.** The benchmark treats all survey records equally, ignoring complex sampling designs and survey weights. This biases the learned distributions toward oversampled strata and may not reflect the population distributions that practitioners need.
+
+**Household structure.** Current synthesis operates at the person level. Realistic microdata requires consistent household structure: spouses should have compatible incomes, dependents should be children, tax unit filing status should match household composition. Hierarchical synthesis and relationship pointers (spouse_person_id, parent_person_id) are planned for future work.
+
+**Evaluation metrics.** The PDC metrics adapted from computer vision may not capture the properties that survey statisticians prioritize, such as marginal distributional fidelity, cross-tabulation accuracy, or analytical validity (whether regressions on synthetic data replicate those on real data). Adding survey-standard evaluation metrics would strengthen the evaluation.
+
+**Deep generative baselines.** I exclude CTGAN and TVAE {cite:p}`xu2019modeling` from the current benchmark due to dependency constraints. Adding these baselines, along with recent diffusion-based methods like Forest Flow {cite:p}`jolicoeurmartineau2024generating`, would strengthen the comparison.
+
+### Future work
+
+The most impactful improvement would be expanding the shared variable set beyond age and sex to include employment status, education, marital status, filing status, and disability indicators. This would strengthen the conditioning bridge between sources and address the 0% PSID coverage. Second, hierarchical synthesis preserving household, tax unit, and person structure {cite:p}`gale2022simulating` would make the synthetic data usable for tax-benefit microsimulation. Third, adding diffusion-based methods (Forest Flow {cite:p}`jolicoeurmartineau2024generating`) and established baselines (CTGAN, TVAE) would strengthen the methodological comparison. Finally, incorporating survey weights into training and adding survey-standard evaluation metrics (marginal comparisons, analytical validity) would make the framework more relevant to survey statisticians.
+
+## Conclusion
+
+I presented microplex, a framework for generating synthetic microdata from multiple government surveys using per-variable conditional models. The central empirical finding is that zero-inflation handling — a two-stage decomposition separating the zero/non-zero classification from the positive-value distribution — provides large coverage gains for neural methods (MAF: +{eval}`r.zi_maf_vs_maf_lift`; QDNN: +{eval}`r.zi_qdnn_vs_qdnn_lift`) while barely affecting tree-based methods (+{eval}`r.zi_qrf_vs_qrf_lift` for QRF). This pattern holds across {eval}`r.n_seeds` random seeds and suggests that practitioners working with economic survey data should implement zero-inflation handling before selecting a base model.
+
+The framework has clear limitations in its current form: the conditional independence assumption and narrow shared variable set (age, sex) mean cross-source correlations are not captured, as demonstrated by the 0% PSID coverage. These limitations are addressable — expanding shared variables and modeling cross-source dependencies are the highest-priority improvements for making the synthetic data usable in production microsimulation.
+
+## References
+
+```{bibliography}
+:style: unsrt
+```
