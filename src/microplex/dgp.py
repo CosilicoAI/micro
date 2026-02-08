@@ -286,7 +286,13 @@ class PopulationDGP:
                 if col in self.zero_classifiers_:
                     # Probabilistic zero/non-zero
                     clf = self.zero_classifiers_[col]
-                    probs = clf.predict_proba(X)[:, 1]
+                    proba = clf.predict_proba(X)
+                    if proba.shape[1] == 1:
+                        # Single class: all zero or all non-zero
+                        only_class = clf.classes_[0]
+                        probs = np.full(n, float(only_class))
+                    else:
+                        probs = proba[:, 1]
                     is_nonzero = rng.random(n) < probs
 
                     if col in self.models_ and is_nonzero.sum() > 0:
