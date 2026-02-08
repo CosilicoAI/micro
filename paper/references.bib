@@ -28,21 +28,18 @@
   year={1993}
 }
 
-@article{drechsler2011synthetic,
-  title={Synthetic datasets for statistical disclosure control: theory and implementation},
-  author={Drechsler, Jorg},
+@book{drechsler2011synthetic,
+  title={Synthetic Datasets for Statistical Disclosure Control: Theory and Implementation},
+  author={Drechsler, J{\"o}rg},
   year={2011},
   publisher={Springer}
 }
 
-@article{little1993statistical,
-  title={Statistical analysis of masked data},
-  author={Little, Roderick JA},
-  journal={Journal of Official Statistics},
-  volume={9},
-  number={2},
-  pages={407--426},
-  year={1993}
+@book{dorazio2006statistical,
+  title={Statistical Matching: Theory and Practice},
+  author={D'Orazio, Marcello and Di Zio, Marco and Scanu, Mauro},
+  year={2006},
+  publisher={John Wiley \& Sons}
 }
 
 @article{raghunathan2003multiple,
@@ -55,25 +52,28 @@
   year={2003}
 }
 
-@article{xu2019modeling,
+@inproceedings{xu2019modeling,
   title={Modeling Tabular Data using Conditional {GAN}},
   author={Xu, Lei and Skoularidou, Maria and Cuesta-Infante, Alfredo and Veeramachaneni, Kalyan},
-  journal={Advances in Neural Information Processing Systems},
+  booktitle={Advances in Neural Information Processing Systems},
   volume={32},
   year={2019}
 }
 
-@article{xu2019tvae,
-  title={Synthesizing tabular data using generative adversarial networks},
-  author={Xu, Lei and Veeramachaneni, Kalyan},
-  journal={arXiv preprint arXiv:1811.11264},
+% Note: TVAE was introduced in the same NeurIPS 2019 paper as CTGAN (xu2019modeling).
+% This entry is retained as an alias for backward compatibility.
+@inproceedings{xu2019tvae,
+  title={Modeling Tabular Data using Conditional {GAN}},
+  author={Xu, Lei and Skoularidou, Maria and Cuesta-Infante, Alfredo and Veeramachaneni, Kalyan},
+  booktitle={Advances in Neural Information Processing Systems},
+  volume={32},
   year={2019}
 }
 
-@article{papamakarios2017masked,
+@inproceedings{papamakarios2017masked,
   title={Masked autoregressive flow for density estimation},
   author={Papamakarios, George and Pavlakou, Theo and Murray, Iain},
-  journal={Advances in Neural Information Processing Systems},
+  booktitle={Advances in Neural Information Processing Systems},
   volume={30},
   year={2017}
 }
@@ -87,11 +87,13 @@
   year={2006}
 }
 
-@article{jolicoeurmartineau2024generating,
+@inproceedings{jolicoeurmartineau2024generating,
   title={Generating and Imputing Tabular Data via Diffusion and Flow-based Gradient-Boosted Trees},
   author={Jolicoeur-Martineau, Alexia and Fatras, Kilian and Kachman, Tal},
-  journal={International Conference on Artificial Intelligence and Statistics},
-  year={2024}
+  booktitle={International Conference on Artificial Intelligence and Statistics},
+  pages={1288--1296},
+  year={2024},
+  organization={PMLR}
 }
 
 @article{gale2022simulating,
@@ -104,11 +106,12 @@
   year={2022}
 }
 
-@article{flood2020integrated,
-  title={The {ASEC} of the {CPS}: a guide to understanding the Annual Social and Economic Supplement},
+@misc{flood2020integrated,
+  title={{IPUMS CPS}: Version 11.0 [dataset]},
   author={Flood, Sarah and King, Miriam and Rodgers, Renae and Ruggles, Steven and Warren, J Robert},
   year={2020},
-  publisher={IPUMS}
+  howpublished={Minneapolis, MN: IPUMS},
+  url={https://doi.org/10.18128/D030.V11.0}
 }
 
 @article{deville1992calibration,
@@ -150,10 +153,22 @@
   year={2001}
 }
 
-@article{patki2016synthetic,
-  title={The synthetic data vault},
-  author={Patki, Neha and Wedge, Roy and Veeramachaneni, Kalyan},
-  journal={IEEE International Conference on Data Science and Advanced Analytics},
-  pages={399--410},
-  year={2016}
+@article{deming1940least,
+  title={On a least squares adjustment of a sampled frequency table when the expected marginal totals are known},
+  author={Deming, W Edwards and Stephan, Frederick F},
+  journal={The Annals of Mathematical Statistics},
+  volume={11},
+  number={4},
+  pages={427--444},
+  year={1940}
+}
+
+@article{hainmueller2012entropy,
+  title={Entropy balancing for causal effects: a multivariate reweighting method to produce balanced samples in observational studies},
+  author={Hainmueller, Jens},
+  journal={Political Analysis},
+  volume={20},
+  number={1},
+  pages={25--46},
+  year={2012}
 }

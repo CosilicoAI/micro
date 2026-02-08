@@ -158,6 +158,10 @@ def main():
         default=str(Path(__file__).parent.parent / "data"),
     )
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--n-seeds", type=int, default=1,
+        help="Number of seeds for multi-seed evaluation (default: 1, single run)",
+    )
     args = parser.parse_args()
 
     data_dir = Path(args.data_dir)
@@ -184,30 +188,63 @@ def main():
 
     runner = BenchmarkRunner(methods=methods)
     t0 = time.time()
-    result = runner.run(
-        sources=sources,
-        shared_cols=shared_cols,
-        holdout_frac=args.holdout_frac,
-        n_generate=args.n_generate,
-        k=args.k,
-        seed=args.seed,
-    )
-    total_elapsed = time.time() - t0
 
-    # Print summary
-    print(f"\n{result.summary()}")
-    print(f"\nTotal elapsed: {total_elapsed:.1f}s")
+    if args.n_seeds > 1:
+        # Multi-seed evaluation
+        multi_result = runner.run_multi_seed(
+            sources=sources,
+            shared_cols=shared_cols,
+            n_seeds=args.n_seeds,
+            base_seed=args.seed,
+            holdout_frac=args.holdout_frac,
+            n_generate=args.n_generate,
+            k=args.k,
+        )
+        total_elapsed = time.time() - t0
 
-    # Save results
-    if args.output:
-        output_path = Path(args.output)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        result_dict = result.to_dict()
-        result_dict["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-        result_dict["total_elapsed_seconds"] = round(total_elapsed, 1)
-        with open(output_path, "w") as f:
-            json.dump(result_dict, f, indent=2)
-        print(f"\nResults saved to {output_path}")
+        # Print multi-seed summary
+        print(f"\n{'='*75}")
+        print(f"Multi-seed results ({args.n_seeds} seeds)")
+        print(f"{'='*75}")
+        for method_name, source_stats in multi_result["methods"].items():
+            print(f"\n  {method_name}:")
+            for source_name, stats in source_stats.items():
+                print(f"    {source_name}: {stats['mean']:.1%} +/- {stats['se']:.1%} "
+                      f"(n={stats['n_seeds']})")
+        print(f"\nTotal elapsed: {total_elapsed:.1f}s")
+
+        if args.output:
+            output_path = Path(args.output)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            multi_result["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+            multi_result["total_elapsed_seconds"] = round(total_elapsed, 1)
+            with open(output_path, "w") as f:
+                json.dump(multi_result, f, indent=2, default=str)
+            print(f"\nResults saved to {output_path}")
+    else:
+        # Single-seed evaluation (original behavior)
+        result = runner.run(
+            sources=sources,
+            shared_cols=shared_cols,
+            holdout_frac=args.holdout_frac,
+            n_generate=args.n_generate,
+            k=args.k,
+            seed=args.seed,
+        )
+        total_elapsed = time.time() - t0
+
+        print(f"\n{result.summary()}")
+        print(f"\nTotal elapsed: {total_elapsed:.1f}s")
+
+        if args.output:
+            output_path = Path(args.output)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            result_dict = result.to_dict()
+            result_dict["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+            result_dict["total_elapsed_seconds"] = round(total_elapsed, 1)
+            with open(output_path, "w") as f:
+                json.dump(result_dict, f, indent=2)
+            print(f"\nResults saved to {output_path}")
 
 
 if __name__ == "__main__":

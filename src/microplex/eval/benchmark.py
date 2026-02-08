@@ -417,8 +417,11 @@ class QDNNMethod(_MultiSourceBase):
         optimizer = torch.optim.Adam(model.parameters(), lr=self.lr)
 
         dataset = torch.utils.data.TensorDataset(X_t, y_t)
+        g = torch.Generator()
+        g.manual_seed(42)
         loader = torch.utils.data.DataLoader(
-            dataset, batch_size=self.batch_size, shuffle=True
+            dataset, batch_size=self.batch_size, shuffle=True,
+            generator=g,
         )
 
         model.train()
@@ -519,8 +522,11 @@ class MAFMethod(_MultiSourceBase):
 
         optimizer = torch.optim.Adam(flow.parameters(), lr=self.lr)
         dataset = torch.utils.data.TensorDataset(X_t, y_t)
+        g = torch.Generator()
+        g.manual_seed(42)
         loader = torch.utils.data.DataLoader(
-            dataset, batch_size=self.batch_size, shuffle=True
+            dataset, batch_size=self.batch_size, shuffle=True,
+            generator=g,
         )
 
         flow.train()
@@ -735,6 +741,15 @@ class BenchmarkRunner:
         """
         rng = np.random.RandomState(seed)
 
+        # Set PyTorch seeds for deterministic neural method training
+        try:
+            import torch
+            torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(seed)
+        except ImportError:
+            pass
+
         # Create consistent train/holdout splits
         train_sources = {}
         holdouts = {}
@@ -819,3 +834,63 @@ class BenchmarkRunner:
             k=k,
             seed=seed,
         )
+
+    def run_multi_seed(
+        self,
+        sources: dict[str, pd.DataFrame],
+        shared_cols: list[str],
+        n_seeds: int = 5,
+        base_seed: int = 42,
+        **kwargs,
+    ) -> dict:
+        """Run benchmark with multiple seeds and aggregate results.
+
+        Returns a dict with per-method mean +/- SE for coverage metrics.
+        """
+        all_results = []
+        for i in range(n_seeds):
+            seed = base_seed + i
+            print(f"\n{'='*60}")
+            print(f"  SEED {seed} ({i+1}/{n_seeds})")
+            print(f"{'='*60}")
+            # Recreate methods for each seed (fresh state)
+            self.methods = get_default_methods() if not hasattr(self, '_method_factory') else self._method_factory()
+            result = self.run(sources=sources, shared_cols=shared_cols, seed=seed, **kwargs)
+            all_results.append(result)
+
+        # Aggregate per-method, per-source coverage across seeds
+        method_names = set()
+        source_names = set()
+        for r in all_results:
+            for mr in r.method_results:
+                method_names.add(mr.method_name)
+                for sr in mr.source_results:
+                    source_names.add(sr.source_name)
+
+        summary = {}
+        for mname in sorted(method_names):
+            method_coverages = {}
+            for sname in sorted(source_names):
+                covs = []
+                for r in all_results:
+                    for mr in r.method_results:
+                        if mr.method_name == mname:
+                            for sr in mr.source_results:
+                                if sr.source_name == sname:
+                                    covs.append(sr.coverage)
+                if covs:
+                    method_coverages[sname] = {
+                        "mean": float(np.mean(covs)),
+                        "std": float(np.std(covs, ddof=1)) if len(covs) > 1 else 0.0,
+                        "se": float(np.std(covs, ddof=1) / np.sqrt(len(covs))) if len(covs) > 1 else 0.0,
+                        "n_seeds": len(covs),
+                        "values": covs,
+                    }
+            summary[mname] = method_coverages
+
+        return {
+            "n_seeds": n_seeds,
+            "base_seed": base_seed,
+            "methods": summary,
+            "raw_results": [r.to_dict() for r in all_results],
+        }
