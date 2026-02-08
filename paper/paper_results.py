@@ -76,6 +76,11 @@ class ReweightingMethodStats:
         return f"{self.elapsed:.2f}s"
 
 
+def _pct_change(old: float, new: float) -> float:
+    """Percent reduction from old to new: (old - new) / old * 100."""
+    return (old - new) / old * 100
+
+
 @dataclass
 class PaperResults:
     """All computed values for paper inline references."""
@@ -116,15 +121,20 @@ class PaperResults:
 
     # Synthesis derived comparisons
     @property
+    def _synthesis_methods(self) -> list[MethodStats]:
+        return [self.qrf, self.zi_qrf, self.qdnn, self.zi_qdnn, self.maf, self.zi_maf]
+
+    def _coverage_lift(self, zi_method: MethodStats, base_method: MethodStats) -> str:
+        lift = (zi_method.coverage - base_method.coverage) / base_method.coverage * 100
+        return f"{lift:.0f}%"
+
+    @property
     def best_method(self) -> str:
-        methods = [self.qrf, self.zi_qrf, self.qdnn, self.zi_qdnn, self.maf, self.zi_maf]
-        best = max(methods, key=lambda m: m.coverage)
-        return best.name
+        return max(self._synthesis_methods, key=lambda m: m.coverage).name
 
     @property
     def best_coverage(self) -> str:
-        methods = [self.qrf, self.zi_qrf, self.qdnn, self.zi_qdnn, self.maf, self.zi_maf]
-        return max(m.coverage for m in methods)
+        return max(m.coverage for m in self._synthesis_methods)
 
     @property
     def best_coverage_pct(self) -> str:
@@ -132,18 +142,15 @@ class PaperResults:
 
     @property
     def zi_maf_vs_maf_lift(self) -> str:
-        lift = (self.zi_maf.coverage - self.maf.coverage) / self.maf.coverage * 100
-        return f"{lift:.0f}%"
+        return self._coverage_lift(self.zi_maf, self.maf)
 
     @property
     def zi_qdnn_vs_qdnn_lift(self) -> str:
-        lift = (self.zi_qdnn.coverage - self.qdnn.coverage) / self.qdnn.coverage * 100
-        return f"{lift:.0f}%"
+        return self._coverage_lift(self.zi_qdnn, self.qdnn)
 
     @property
     def zi_qrf_vs_qrf_lift(self) -> str:
-        lift = (self.zi_qrf.coverage - self.qrf.coverage) / self.qrf.coverage * 100
-        return f"{lift:.0f}%"
+        return self._coverage_lift(self.zi_qrf, self.qrf)
 
     @property
     def zi_speedup_over_maf(self) -> str:
@@ -160,25 +167,26 @@ class PaperResults:
 
     # Reweighting derived comparisons
     @property
+    def _calibration_methods(self) -> list[ReweightingMethodStats]:
+        return [self.rw_ipf, self.rw_entropy, self.rw_sparse_cal]
+
+    @property
     def best_rw_method(self) -> str:
         """Best reweighting method by lowest mean relative error (calibration methods only)."""
-        calibration_methods = [self.rw_ipf, self.rw_entropy, self.rw_sparse_cal]
-        best = min(calibration_methods, key=lambda m: m.mean_relative_error)
-        return best.name
+        return min(self._calibration_methods, key=lambda m: m.mean_relative_error).name
 
     @property
     def best_rw_error(self) -> str:
-        calibration_methods = [self.rw_ipf, self.rw_entropy, self.rw_sparse_cal]
-        return f"{min(m.mean_relative_error for m in calibration_methods):.1%}"
+        return f"{min(m.mean_relative_error for m in self._calibration_methods):.1%}"
 
     @property
     def entropy_vs_ipf_error_reduction(self) -> str:
-        reduction = (self.rw_ipf.mean_relative_error - self.rw_entropy.mean_relative_error) / self.rw_ipf.mean_relative_error * 100
+        reduction = _pct_change(self.rw_ipf.mean_relative_error, self.rw_entropy.mean_relative_error)
         return f"{reduction:.0f}%"
 
     @property
     def sparse_cal_cv_vs_ipf(self) -> str:
-        reduction = (self.rw_ipf.weight_cv - self.rw_sparse_cal.weight_cv) / self.rw_ipf.weight_cv * 100
+        reduction = _pct_change(self.rw_ipf.weight_cv, self.rw_sparse_cal.weight_cv)
         return f"{reduction:.0f}%"
 
     @property
@@ -186,8 +194,8 @@ class PaperResults:
         return self.rw_n_marginal_targets + self.rw_n_continuous_targets
 
 
-def _extract_method(data: dict, key: str, name: str) -> MethodStats:
-    m = data["methods"][key]
+def _extract_method(data: dict, name: str) -> MethodStats:
+    m = data["methods"][name]
     source_map = {s["source"]: s for s in m["sources"]}
     return MethodStats(
         name=name,
@@ -233,12 +241,12 @@ def load_results(
 
     return PaperResults(
         # Synthesis
-        qrf=_extract_method(synth_data, "QRF", "QRF"),
-        zi_qrf=_extract_method(synth_data, "ZI-QRF", "ZI-QRF"),
-        qdnn=_extract_method(synth_data, "QDNN", "QDNN"),
-        zi_qdnn=_extract_method(synth_data, "ZI-QDNN", "ZI-QDNN"),
-        maf=_extract_method(synth_data, "MAF", "MAF"),
-        zi_maf=_extract_method(synth_data, "ZI-MAF", "ZI-MAF"),
+        qrf=_extract_method(synth_data, "QRF"),
+        zi_qrf=_extract_method(synth_data, "ZI-QRF"),
+        qdnn=_extract_method(synth_data, "QDNN"),
+        zi_qdnn=_extract_method(synth_data, "ZI-QDNN"),
+        maf=_extract_method(synth_data, "MAF"),
+        zi_maf=_extract_method(synth_data, "ZI-MAF"),
         k=synth_data["k"],
         holdout_frac=synth_data["holdout_frac"],
         n_generate=synth_data["n_generate"],

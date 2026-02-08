@@ -24,9 +24,9 @@ Usage:
 
 If you don't have access to the raw survey data, you can use the
 pre-built dataset available at:
-    https://huggingface.co/datasets/CosilicoAI/microplex-benchmark-data
+    https://huggingface.co/datasets/nikhil-woodruff/microplex-benchmark-data
 
-    huggingface-cli download CosilicoAI/microplex-benchmark-data \\
+    huggingface-cli download nikhil-woodruff/microplex-benchmark-data \\
         --local-dir ./data --include "stacked_comprehensive.parquet"
 """
 
@@ -72,7 +72,7 @@ def _download_from_hf(output_path: Path):
 
     print("Downloading stacked_comprehensive.parquet from HuggingFace...")
     path = hf_hub_download(
-        repo_id="CosilicoAI/microplex-benchmark-data",
+        repo_id="nikhil-woodruff/microplex-benchmark-data",
         filename="stacked_comprehensive.parquet",
         repo_type="dataset",
         local_dir=str(output_path.parent),

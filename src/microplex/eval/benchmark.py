@@ -14,8 +14,9 @@ PRDC metrics (Precision, Recall, Density, Coverage) from Naeem et al. (2020).
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Protocol, runtime_checkable
+from collections import defaultdict
+from dataclasses import dataclass
+from typing import Optional, Protocol, runtime_checkable
 
 import numpy as np
 import pandas as pd
@@ -26,6 +27,8 @@ try:
     from quantile_forest import RandomForestQuantileRegressor
 except ImportError:
     RandomForestQuantileRegressor = None
+
+NUMERIC_DTYPES = [np.float64, np.int64, np.float32, np.int32]
 
 
 # --- Protocol ---
@@ -79,29 +82,26 @@ class MethodResult:
     source_results: list[SourceResult]
     elapsed_seconds: float
 
-    @property
-    def mean_coverage(self) -> float:
+    def _mean_metric(self, metric: str) -> float:
         if not self.source_results:
             return 0.0
-        return float(np.mean([s.coverage for s in self.source_results]))
+        return float(np.mean([getattr(s, metric) for s in self.source_results]))
+
+    @property
+    def mean_coverage(self) -> float:
+        return self._mean_metric("coverage")
 
     @property
     def mean_precision(self) -> float:
-        if not self.source_results:
-            return 0.0
-        return float(np.mean([s.precision for s in self.source_results]))
+        return self._mean_metric("precision")
 
     @property
     def mean_recall(self) -> float:
-        if not self.source_results:
-            return 0.0
-        return float(np.mean([s.recall for s in self.source_results]))
+        return self._mean_metric("recall")
 
     @property
     def mean_density(self) -> float:
-        if not self.source_results:
-            return 0.0
-        return float(np.mean([s.density for s in self.source_results]))
+        return self._mean_metric("density")
 
     def to_dict(self) -> dict:
         return {
@@ -573,10 +573,10 @@ class ZIMAFMethod(MAFMethod):
 # --- CTGAN / TVAE Methods ---
 
 
-class CTGANMethod:
-    """Conditional Tabular GAN (from SDV library)."""
+class _SDVMethodBase:
+    """Base class for SDV-based synthesis methods (CTGAN, TVAE)."""
 
-    name = "CTGAN"
+    name: str = "SDV"
 
     def __init__(self, epochs: int = 300, batch_size: int = 500, **kwargs):
         self.epochs = epochs
@@ -584,92 +584,67 @@ class CTGANMethod:
         self._model = None
         self._columns = None
 
-    def fit(
-        self, sources: dict[str, pd.DataFrame], shared_cols: list[str]
-    ) -> "CTGANMethod":
+    def _create_synthesizer(self, metadata):
+        """Create the SDV synthesizer instance. Override in subclasses."""
+        raise NotImplementedError
+
+    def fit(self, sources: dict[str, pd.DataFrame], shared_cols: list[str]) -> "_SDVMethodBase":
         try:
-            from sdv.single_table import CTGANSynthesizer
             from sdv.metadata import SingleTableMetadata
         except ImportError:
             raise ImportError("sdv required: pip install sdv")
 
-        # Stack all sources
-        dfs = []
-        for name, df in sources.items():
-            dfs.append(df)
-        combined = pd.concat(dfs, ignore_index=True)
+        combined = pd.concat(list(sources.values()), ignore_index=True)
 
-        # Keep only numeric columns with <50% NaN
-        numeric_cols = [c for c in combined.columns
-                        if combined[c].dtype in [np.float64, np.int64, np.float32, np.int32]
-                        and combined[c].isna().mean() < 0.5]
+        numeric_cols = [
+            c for c in combined.columns
+            if combined[c].dtype in NUMERIC_DTYPES and combined[c].isna().mean() < 0.5
+        ]
         combined = combined[numeric_cols].dropna()
         self._columns = numeric_cols
 
         metadata = SingleTableMetadata()
         metadata.detect_from_dataframe(combined)
 
-        self._model = CTGANSynthesizer(
+        self._model = self._create_synthesizer(metadata)
+        self._model.fit(combined)
+        return self
+
+    def generate(self, n: int, seed: int = 42) -> pd.DataFrame:
+        if self._model is None:
+            raise ValueError("Not fitted")
+        return self._model.sample(n)
+
+
+class CTGANMethod(_SDVMethodBase):
+    """Conditional Tabular GAN (from SDV library)."""
+
+    name = "CTGAN"
+
+    def _create_synthesizer(self, metadata):
+        from sdv.single_table import CTGANSynthesizer
+
+        return CTGANSynthesizer(
             metadata,
             epochs=self.epochs,
             batch_size=self.batch_size,
             verbose=False,
         )
-        self._model.fit(combined)
-        return self
-
-    def generate(self, n: int, seed: int = 42) -> pd.DataFrame:
-        if self._model is None:
-            raise ValueError("Not fitted")
-        return self._model.sample(n)
 
 
-class TVAEMethod:
+class TVAEMethod(_SDVMethodBase):
     """Tabular Variational Autoencoder (from SDV library)."""
 
     name = "TVAE"
 
-    def __init__(self, epochs: int = 300, batch_size: int = 500, **kwargs):
-        self.epochs = epochs
-        self.batch_size = batch_size
-        self._model = None
-        self._columns = None
+    def _create_synthesizer(self, metadata):
+        from sdv.single_table import TVAESynthesizer
 
-    def fit(
-        self, sources: dict[str, pd.DataFrame], shared_cols: list[str]
-    ) -> "TVAEMethod":
-        try:
-            from sdv.single_table import TVAESynthesizer
-            from sdv.metadata import SingleTableMetadata
-        except ImportError:
-            raise ImportError("sdv required: pip install sdv")
-
-        dfs = []
-        for name, df in sources.items():
-            dfs.append(df)
-        combined = pd.concat(dfs, ignore_index=True)
-
-        numeric_cols = [c for c in combined.columns
-                        if combined[c].dtype in [np.float64, np.int64, np.float32, np.int32]
-                        and combined[c].isna().mean() < 0.5]
-        combined = combined[numeric_cols].dropna()
-        self._columns = numeric_cols
-
-        metadata = SingleTableMetadata()
-        metadata.detect_from_dataframe(combined)
-
-        self._model = TVAESynthesizer(
+        return TVAESynthesizer(
             metadata,
             epochs=self.epochs,
             batch_size=self.batch_size,
         )
-        self._model.fit(combined)
-        return self
-
-    def generate(self, n: int, seed: int = 42) -> pd.DataFrame:
-        if self._model is None:
-            raise ValueError("Not fitted")
-        return self._model.sample(n)
 
 
 # --- Benchmark Runner ---
@@ -780,7 +755,7 @@ class BenchmarkRunner:
                     eval_cols = [
                         c for c in holdout.columns
                         if c in synthetic.columns
-                        and holdout[c].dtype in [np.float64, np.int64, np.float32, np.int32]
+                        and holdout[c].dtype in NUMERIC_DTYPES
                     ]
                     if len(eval_cols) < 1:
                         continue
@@ -858,34 +833,33 @@ class BenchmarkRunner:
             result = self.run(sources=sources, shared_cols=shared_cols, seed=seed, **kwargs)
             all_results.append(result)
 
-        # Aggregate per-method, per-source coverage across seeds
-        method_names = set()
-        source_names = set()
-        for r in all_results:
-            for mr in r.method_results:
-                method_names.add(mr.method_name)
-                for sr in mr.source_results:
-                    source_names.add(sr.source_name)
+        # Aggregate per-method, per-source coverage across seeds.
+        # Build a flat list of (method, source, coverage) tuples, then group.
+        coverage_records: list[tuple[str, str, float]] = [
+            (mr.method_name, sr.source_name, sr.coverage)
+            for r in all_results
+            for mr in r.method_results
+            for sr in mr.source_results
+        ]
+
+        # Group by (method, source)
+        grouped: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
+        for method_name, source_name, coverage in coverage_records:
+            grouped[method_name][source_name].append(coverage)
 
         summary = {}
-        for mname in sorted(method_names):
+        for mname in sorted(grouped):
             method_coverages = {}
-            for sname in sorted(source_names):
-                covs = []
-                for r in all_results:
-                    for mr in r.method_results:
-                        if mr.method_name == mname:
-                            for sr in mr.source_results:
-                                if sr.source_name == sname:
-                                    covs.append(sr.coverage)
-                if covs:
-                    method_coverages[sname] = {
-                        "mean": float(np.mean(covs)),
-                        "std": float(np.std(covs, ddof=1)) if len(covs) > 1 else 0.0,
-                        "se": float(np.std(covs, ddof=1) / np.sqrt(len(covs))) if len(covs) > 1 else 0.0,
-                        "n_seeds": len(covs),
-                        "values": covs,
-                    }
+            for sname in sorted(grouped[mname]):
+                covs = grouped[mname][sname]
+                std = float(np.std(covs, ddof=1)) if len(covs) > 1 else 0.0
+                method_coverages[sname] = {
+                    "mean": float(np.mean(covs)),
+                    "std": std,
+                    "se": std / np.sqrt(len(covs)) if len(covs) > 1 else 0.0,
+                    "n_seeds": len(covs),
+                    "values": covs,
+                }
             summary[mname] = method_coverages
 
         return {

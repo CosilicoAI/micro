@@ -32,16 +32,13 @@ def load_multi_source_data(data_dir: Path) -> dict[str, pd.DataFrame]:
     print(f"  Total rows: {len(df):,}")
     print(f"  Sources: {df['_survey'].value_counts().to_dict()}")
 
+    numeric_dtypes = [np.float64, np.int64, np.float32, np.int32]
     sources = {}
     for survey_name in df["_survey"].unique():
-        sub = df[df["_survey"] == survey_name].copy()
-        if "_survey" in sub.columns:
-            sub = sub.drop(columns=["_survey"])
-        # Keep only numeric columns with low NaN rate
+        sub = df[df["_survey"] == survey_name].drop(columns=["_survey"]).copy()
         numeric_cols = [
             col for col in sub.columns
-            if sub[col].dtype in [np.float64, np.int64, np.float32, np.int32]
-            and sub[col].isna().mean() < 0.05
+            if sub[col].dtype in numeric_dtypes and sub[col].isna().mean() < 0.05
         ]
         sub = sub[numeric_cols].dropna().reset_index(drop=True)
         sources[survey_name] = sub
@@ -52,35 +49,20 @@ def load_multi_source_data(data_dir: Path) -> dict[str, pd.DataFrame]:
 
 def find_shared_cols(sources: dict[str, pd.DataFrame]) -> list[str]:
     """Find numeric columns present in ALL sources."""
-    all_source_names = list(sources.keys())
-    shared = []
-    for col in sources[all_source_names[0]].columns:
-        if sources[all_source_names[0]][col].dtype not in [
-            np.float64, np.int64, np.float32, np.int32
-        ]:
-            continue
-        in_all = all(
+    numeric_dtypes = [np.float64, np.int64, np.float32, np.int32]
+    exclude = {"weight", "person_id", "household_id", "interview_number"}
+    first_df = next(iter(sources.values()))
+
+    shared = [
+        col for col in first_df.columns
+        if first_df[col].dtype in numeric_dtypes
+        and col not in exclude
+        and all(
             col in df.columns and df[col].isna().mean() < 0.05
             for df in sources.values()
         )
-        if in_all:
-            shared.append(col)
-
-    exclude = {"weight", "person_id", "household_id", "interview_number"}
-    shared = [c for c in shared if c not in exclude]
+    ]
     return sorted(shared)
-
-
-METHOD_MAP = {
-    "qrf": "QRFMethod",
-    "zi-qrf": "ZIQRFMethod",
-    "qdnn": "QDNNMethod",
-    "zi-qdnn": "ZIQDNNMethod",
-    "maf": "MAFMethod",
-    "zi-maf": "ZIMAFMethod",
-    "ctgan": "CTGANMethod",
-    "tvae": "TVAEMethod",
-}
 
 
 def build_methods(method_names: list[str] = None, fast: bool = False):
@@ -190,8 +172,7 @@ def main():
     t0 = time.time()
 
     if args.n_seeds > 1:
-        # Multi-seed evaluation
-        multi_result = runner.run_multi_seed(
+        result_dict = runner.run_multi_seed(
             sources=sources,
             shared_cols=shared_cols,
             n_seeds=args.n_seeds,
@@ -202,27 +183,15 @@ def main():
         )
         total_elapsed = time.time() - t0
 
-        # Print multi-seed summary
         print(f"\n{'='*75}")
         print(f"Multi-seed results ({args.n_seeds} seeds)")
         print(f"{'='*75}")
-        for method_name, source_stats in multi_result["methods"].items():
+        for method_name, source_stats in result_dict["methods"].items():
             print(f"\n  {method_name}:")
             for source_name, stats in source_stats.items():
                 print(f"    {source_name}: {stats['mean']:.1%} +/- {stats['se']:.1%} "
                       f"(n={stats['n_seeds']})")
-        print(f"\nTotal elapsed: {total_elapsed:.1f}s")
-
-        if args.output:
-            output_path = Path(args.output)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            multi_result["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-            multi_result["total_elapsed_seconds"] = round(total_elapsed, 1)
-            with open(output_path, "w") as f:
-                json.dump(multi_result, f, indent=2, default=str)
-            print(f"\nResults saved to {output_path}")
     else:
-        # Single-seed evaluation (original behavior)
         result = runner.run(
             sources=sources,
             shared_cols=shared_cols,
@@ -232,19 +201,19 @@ def main():
             seed=args.seed,
         )
         total_elapsed = time.time() - t0
-
+        result_dict = result.to_dict()
         print(f"\n{result.summary()}")
-        print(f"\nTotal elapsed: {total_elapsed:.1f}s")
 
-        if args.output:
-            output_path = Path(args.output)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            result_dict = result.to_dict()
-            result_dict["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-            result_dict["total_elapsed_seconds"] = round(total_elapsed, 1)
-            with open(output_path, "w") as f:
-                json.dump(result_dict, f, indent=2)
-            print(f"\nResults saved to {output_path}")
+    print(f"\nTotal elapsed: {total_elapsed:.1f}s")
+
+    if args.output:
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        result_dict["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        result_dict["total_elapsed_seconds"] = round(total_elapsed, 1)
+        with open(output_path, "w") as f:
+            json.dump(result_dict, f, indent=2, default=str)
+        print(f"\nResults saved to {output_path}")
 
 
 if __name__ == "__main__":

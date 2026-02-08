@@ -5,27 +5,27 @@
   "seed": 42,
   "methods": {
     "QRF": {
-      "mean_coverage": 0.4257,
-      "mean_precision": 0.3055,
-      "mean_recall": 0.4257,
-      "mean_density": 0.1896,
-      "elapsed_seconds": 8.3,
+      "mean_coverage": 0.4219,
+      "mean_precision": 0.3061,
+      "mean_recall": 0.4219,
+      "mean_density": 0.1889,
+      "elapsed_seconds": 9.6,
       "sources": [
         {
           "source": "sipp",
-          "precision": 0.6586,
-          "recall": 0.9453,
-          "density": 0.4187,
-          "coverage": 0.9453,
+          "precision": 0.662,
+          "recall": 0.9377,
+          "density": 0.4227,
+          "coverage": 0.9377,
           "n_holdout": 4000,
           "n_synthetic": 9841
         },
         {
           "source": "cps",
-          "precision": 0.258,
-          "recall": 0.3317,
-          "density": 0.15,
-          "coverage": 0.3317,
+          "precision": 0.2562,
+          "recall": 0.328,
+          "density": 0.144,
+          "coverage": 0.328,
           "n_holdout": 4000,
           "n_synthetic": 9841
         },
@@ -41,27 +41,27 @@
       ]
     },
     "ZI-QRF": {
-      "mean_coverage": 0.4303,
-      "mean_precision": 0.3116,
-      "mean_recall": 0.4303,
-      "mean_density": 0.1893,
-      "elapsed_seconds": 6.3,
+      "mean_coverage": 0.431,
+      "mean_precision": 0.3151,
+      "mean_recall": 0.431,
+      "mean_density": 0.195,
+      "elapsed_seconds": 7.5,
       "sources": [
         {
           "source": "sipp",
-          "precision": 0.6747,
-          "recall": 0.948,
-          "density": 0.4186,
-          "coverage": 0.948,
+          "precision": 0.68,
+          "recall": 0.9475,
+          "density": 0.428,
+          "coverage": 0.9475,
           "n_holdout": 4000,
           "n_synthetic": 9841
         },
         {
           "source": "cps",
-          "precision": 0.2599,
-          "recall": 0.343,
-          "density": 0.1494,
-          "coverage": 0.343,
+          "precision": 0.2653,
+          "recall": 0.3455,
+          "density": 0.157,
+          "coverage": 0.3455,
           "n_holdout": 4000,
           "n_synthetic": 9841
         },
@@ -77,27 +77,27 @@
       ]
     },
     "QDNN": {
-      "mean_coverage": 0.2432,
-      "mean_precision": 0.1847,
-      "mean_recall": 0.2432,
-      "mean_density": 0.1704,
-      "elapsed_seconds": 35.7,
+      "mean_coverage": 0.2232,
+      "mean_precision": 0.1796,
+      "mean_recall": 0.2232,
+      "mean_density": 0.2094,
+      "elapsed_seconds": 39.9,
       "sources": [
         {
           "source": "sipp",
-          "precision": 0.3547,
-          "recall": 0.3675,
-          "density": 0.3971,
-          "coverage": 0.3675,
+          "precision": 0.3422,
+          "recall": 0.319,
+          "density": 0.523,
+          "coverage": 0.319,
           "n_holdout": 4000,
           "n_synthetic": 9841
         },
         {
           "source": "cps",
-          "precision": 0.1994,
-          "recall": 0.3623,
-          "density": 0.1142,
-          "coverage": 0.3623,
+          "precision": 0.1965,
+          "recall": 0.3505,
+          "density": 0.1052,
+          "coverage": 0.3505,
           "n_holdout": 4000,
           "n_synthetic": 9841
         },
@@ -113,27 +113,27 @@
       ]
     },
     "ZI-QDNN": {
-      "mean_coverage": 0.3706,
-      "mean_precision": 0.2428,
-      "mean_recall": 0.3706,
-      "mean_density": 0.1609,
-      "elapsed_seconds": 22.7,
+      "mean_coverage": 0.3737,
+      "mean_precision": 0.2452,
+      "mean_recall": 0.3737,
+      "mean_density": 0.1731,
+      "elapsed_seconds": 25.5,
       "sources": [
         {
           "source": "sipp",
-          "precision": 0.5193,
-          "recall": 0.7145,
-          "density": 0.3766,
-          "coverage": 0.7145,
+          "precision": 0.5052,
+          "recall": 0.699,
+          "density": 0.4007,
+          "coverage": 0.699,
           "n_holdout": 4000,
           "n_synthetic": 9841
         },
         {
           "source": "cps",
-          "precision": 0.2091,
-          "recall": 0.3972,
-          "density": 0.1062,
-          "coverage": 0.3972,
+          "precision": 0.2303,
+          "recall": 0.4223,
+          "density": 0.1186,
+          "coverage": 0.4223,
           "n_holdout": 4000,
           "n_synthetic": 9841
         },
@@ -149,27 +149,27 @@
       ]
     },
     "MAF": {
-      "mean_coverage": 0.2513,
-      "mean_precision": 0.1774,
-      "mean_recall": 0.2513,
-      "mean_density": 0.2599,
-      "elapsed_seconds": 83.3,
+      "mean_coverage": 0.2555,
+      "mean_precision": 0.1784,
+      "mean_recall": 0.2555,
+      "mean_density": 0.2539,
+      "elapsed_seconds": 85.8,
       "sources": [
         {
           "source": "sipp",
-          "precision": 0.3303,
-          "recall": 0.363,
-          "density": 0.451,
-          "coverage": 0.363,
+          "precision": 0.3179,
+          "recall": 0.3495,
+          "density": 0.4219,
+          "coverage": 0.3495,
           "n_holdout": 4000,
           "n_synthetic": 9841
         },
         {
           "source": "cps",
-          "precision": 0.2019,
-          "recall": 0.391,
-          "density": 0.3287,
-          "coverage": 0.391,
+          "precision": 0.2173,
+          "recall": 0.417,
+          "density": 0.3399,
+          "coverage": 0.417,
           "n_holdout": 4000,
           "n_synthetic": 9841
         },
@@ -185,33 +185,33 @@
       ]
     },
     "ZI-MAF": {
-      "mean_coverage": 0.4467,
-      "mean_precision": 0.2808,
-      "mean_recall": 0.4467,
-      "mean_density": 0.2971,
-      "elapsed_seconds": 52.5,
+      "mean_coverage": 0.4547,
+      "mean_precision": 0.2866,
+      "mean_recall": 0.4547,
+      "mean_density": 0.2763,
+      "elapsed_seconds": 53.8,
       "sources": [
         {
           "source": "sipp",
-          "precision": 0.6055,
-          "recall": 0.877,
-          "density": 0.4676,
-          "coverage": 0.877,
+          "precision": 0.606,
+          "recall": 0.8755,
+          "density": 0.4535,
+          "coverage": 0.8755,
           "n_holdout": 4000,
           "n_synthetic": 9841
         },
         {
           "source": "cps",
-          "precision": 0.2368,
-          "recall": 0.463,
-          "density": 0.4236,
-          "coverage": 0.463,
+          "precision": 0.2536,
+          "recall": 0.4888,
+          "density": 0.3754,
+          "coverage": 0.4888,
           "n_holdout": 4000,
           "n_synthetic": 9841
         },
         {
           "source": "psid",
-          "precision": 0.0,
+          "precision": 0.0001,
           "recall": 0.0,
           "density": 0.0,
           "coverage": 0.0,
@@ -221,6 +221,6 @@
       ]
     }
   },
-  "timestamp": "2026-02-08T09:36:45",
-  "total_elapsed_seconds": 213.7
+  "timestamp": "2026-02-08T11:55:27",
+  "total_elapsed_seconds": 227.1
 }
