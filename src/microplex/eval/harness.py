@@ -12,7 +12,6 @@ from typing import Any, Dict, List, Optional, Protocol
 
 import numpy as np
 import pandas as pd
-from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
 
 
@@ -227,67 +226,28 @@ def _fmt_number(v: float) -> str:
 def _compute_prdc(
     real: np.ndarray, synthetic: np.ndarray, k: int = 5
 ) -> dict[str, float]:
-    """Compute Precision, Recall, Density, Coverage.
+    """Compute Precision, Recall, Density, Coverage via canonical prdc library.
 
-    Based on Naeem et al. (2020). Operates in standardized space.
+    Delegates to Naeem et al. (2020) reference implementation. Recall is
+    kept in the return dict for API compatibility (it equals coverage in
+    the k-NN formulation).
     """
+    from prdc import compute_prdc as _prdc
+
     if len(real) < k + 1 or len(synthetic) < k + 1:
         return {"precision": 0.0, "recall": 0.0, "density": 0.0, "coverage": 0.0}
 
-    # Standardize using real data stats
     scaler = StandardScaler()
     real_s = scaler.fit_transform(real)
     synth_s = scaler.transform(synthetic)
 
-    # k-th neighbor distances within each set (defines manifold radius)
-    nn_real = NearestNeighbors(n_neighbors=k + 1).fit(real_s)
-    real_dists, _ = nn_real.kneighbors(real_s)
-    real_radii = real_dists[:, -1]
-
-    nn_synth = NearestNeighbors(n_neighbors=k + 1).fit(synth_s)
-    synth_dists, _ = nn_synth.kneighbors(synth_s)
-    synth_radii = synth_dists[:, -1]
-
-    # Cross-set: real -> nearest synthetic
-    nn_synth_1 = NearestNeighbors(n_neighbors=1).fit(synth_s)
-    real_to_synth_dist, _ = nn_synth_1.kneighbors(real_s)
-    real_to_synth_dist = real_to_synth_dist[:, 0]
-
-    # Cross-set: synthetic -> nearest real
-    nn_real_1 = NearestNeighbors(n_neighbors=1).fit(real_s)
-    synth_to_real_dist, _ = nn_real_1.kneighbors(synth_s)
-    synth_to_real_dist = synth_to_real_dist[:, 0]
-
-    coverage = float((real_to_synth_dist <= real_radii).mean())
-    # In the k-NN formulation, recall and coverage are identical.
-    # We keep recall in the output dict for API compatibility.
-    recall = coverage
-    precision = float((synth_to_real_dist <= synth_radii).mean())
-
-    # Density: average real points in each synthetic ball, normalized by k
-    # Use vectorized approach instead of loop for speed
-    from sklearn.metrics import pairwise_distances
-
-    # For large data, sample to avoid O(n^2) memory
-    max_density_samples = 2000
-    if len(synth_s) > max_density_samples:
-        rng = np.random.RandomState(42)
-        idx = rng.choice(len(synth_s), max_density_samples, replace=False)
-        synth_sample = synth_s[idx]
-        radii_sample = synth_radii[idx]
-    else:
-        synth_sample = synth_s
-        radii_sample = synth_radii
-
-    dists = pairwise_distances(synth_sample, real_s)
-    counts = (dists <= radii_sample[:, None]).sum(axis=1)
-    density = float(counts.mean() / k)
+    metrics = _prdc(real_s, synth_s, nearest_k=k)
 
     return {
-        "precision": precision,
-        "recall": recall,
-        "density": density,
-        "coverage": coverage,
+        "precision": float(metrics["precision"]),
+        "recall": float(metrics["recall"]),
+        "density": float(metrics["density"]),
+        "coverage": float(metrics["coverage"]),
     }
 
 

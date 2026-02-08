@@ -65,7 +65,7 @@ I compare three model families, each with and without zero-inflation:
 
 **Quantile deep neural network (QDNN).** A multi-layer perceptron trained with pinball loss {cite:p}`koenker2001quantile` to predict quantiles $\hat{q}_\tau(x)$ for $\tau \in \{0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95\}$. At generation time, I sample a random quantile index and return the corresponding prediction.
 
-**Masked autoregressive flow (MAF).** A normalizing flow {cite:p}`papamakarios2017masked` that learns the full conditional density $p(y \mid x)$ via invertible transformations. I apply log transformation to positive values before standardization and train with maximum likelihood. Generated values are clipped to non-negative via `max(x, 0)`, which for the non-ZI variant creates an artificial mass at zero that may inflate the apparent ZI benefit.
+**Masked autoregressive flow (MAF).** A normalizing flow {cite:p}`papamakarios2017masked` that learns the full conditional density $p(y \mid x)$ via invertible transformations. In the benchmark implementation, each non-shared variable gets its own 1-dimensional conditional flow $p(v \mid V_{\text{shared}})$; the MAF does not learn cross-variable dependencies within a source, making the conditional independence assumption shared across all three method families. I apply log transformation to positive values before standardization and train with maximum likelihood. Generated values are clipped to non-negative via `max(x, 0)`, which for the non-ZI variant creates an artificial mass at zero that may inflate the apparent ZI benefit.
 
 ### Evaluation metrics
 
@@ -133,6 +133,13 @@ for name, sources in ms_data["methods"].items():
 df = pd.DataFrame(rows).sort_values("SIPP cov.", ascending=False)
 df.index = range(1, len(df) + 1)
 df
+```
+
+```{figure} figures/coverage_by_method.png
+:name: fig-coverage
+:width: 100%
+
+PRDC coverage by synthesis method and source survey. Error bars show standard errors across {eval}`r.n_seeds` random seeds. PSID (0% for all methods) is omitted.
 ```
 
 Per-source coverage varies dramatically across surveys. ZI-QRF achieves the highest SIPP coverage ({eval}`r.zi_qrf.sipp_pct`), while ZI-MAF leads on CPS ({eval}`r.zi_maf.cps_pct`). PSID coverage is 0% for all methods, reflecting a fundamental limitation of the current shared variable set: with only 2 conditioning variables (age, sex) and 15 PSID-specific columns, the model cannot learn the 15-dimensional joint structure from demographics alone.

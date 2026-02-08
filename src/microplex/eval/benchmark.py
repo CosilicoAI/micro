@@ -153,13 +153,13 @@ class BenchmarkResult:
 
 
 def _compute_prdc(real: np.ndarray, synthetic: np.ndarray, k: int = 5) -> dict[str, float]:
-    """Compute Precision, Density, Coverage via k-NN.
+    """Compute Precision, Density, Coverage via canonical prdc library.
 
-    Adapted from Naeem et al. (2020) PRDC. In the k-NN formulation,
-    recall and coverage are identical, so we report only coverage.
+    Delegates to Naeem et al. (2020) reference implementation. In their
+    k-NN formulation recall and coverage are identical, so we report only
+    coverage (dropping recall from the returned dict).
     """
-    from sklearn.neighbors import NearestNeighbors
-    from sklearn.metrics import pairwise_distances
+    from prdc import compute_prdc as _prdc
 
     if len(real) < k + 1 or len(synthetic) < k + 1:
         return {"precision": 0.0, "density": 0.0, "coverage": 0.0}
@@ -168,43 +168,12 @@ def _compute_prdc(real: np.ndarray, synthetic: np.ndarray, k: int = 5) -> dict[s
     real_s = scaler.fit_transform(real)
     synth_s = scaler.transform(synthetic)
 
-    nn_real = NearestNeighbors(n_neighbors=k + 1).fit(real_s)
-    real_dists, _ = nn_real.kneighbors(real_s)
-    real_radii = real_dists[:, -1]
-
-    nn_synth = NearestNeighbors(n_neighbors=k + 1).fit(synth_s)
-    synth_dists, _ = nn_synth.kneighbors(synth_s)
-    synth_radii = synth_dists[:, -1]
-
-    nn_synth_1 = NearestNeighbors(n_neighbors=1).fit(synth_s)
-    real_to_synth_dist, _ = nn_synth_1.kneighbors(real_s)
-    real_to_synth_dist = real_to_synth_dist[:, 0]
-
-    nn_real_1 = NearestNeighbors(n_neighbors=1).fit(real_s)
-    synth_to_real_dist, _ = nn_real_1.kneighbors(synth_s)
-    synth_to_real_dist = synth_to_real_dist[:, 0]
-
-    coverage = float((real_to_synth_dist <= real_radii).mean())
-    precision = float((synth_to_real_dist <= synth_radii).mean())
-
-    max_density_samples = 2000
-    if len(synth_s) > max_density_samples:
-        rng = np.random.RandomState(42)
-        idx = rng.choice(len(synth_s), max_density_samples, replace=False)
-        synth_sample = synth_s[idx]
-        radii_sample = synth_radii[idx]
-    else:
-        synth_sample = synth_s
-        radii_sample = synth_radii
-
-    dists = pairwise_distances(synth_sample, real_s)
-    counts = (dists <= radii_sample[:, None]).sum(axis=1)
-    density = float(counts.mean() / k)
+    metrics = _prdc(real_s, synth_s, nearest_k=k)
 
     return {
-        "precision": precision,
-        "density": density,
-        "coverage": coverage,
+        "precision": float(metrics["precision"]),
+        "density": float(metrics["density"]),
+        "coverage": float(metrics["coverage"]),
     }
 
 

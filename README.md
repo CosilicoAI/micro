@@ -12,8 +12,7 @@ Multi-source microdata synthesis and survey reweighting.
 
 - **Conditional relationships**: Generate target variables given demographics
 - **Zero-inflated distributions**: Handle variables that are 0 for many observations
-- **Joint correlations**: Preserve relationships between target variables
-- **Hierarchical structures**: Keep household/firm compositions intact
+- **Multi-source fusion**: Combine variables from surveys with different variable sets
 
 ## Installation
 
