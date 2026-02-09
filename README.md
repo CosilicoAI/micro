@@ -71,13 +71,13 @@ print(f"Using {stats['n_nonzero']} of {stats['n_records']} records")
 
 ## Why `microplex`?
 
-| Feature | microplex | CT-GAN | TVAE | synthpop |
-|---------|-------|--------|------|----------|
-| Multi-source fusion | ✅ | ❌ | ❌ | ❌ |
-| Zero-inflation handling | ✅ | ❌ | ❌ | ⚠️ |
-| Multiple synthesis methods | ✅ (QRF, QDNN, MAF) | ❌ | ❌ | ✅ (CART) |
-| Survey reweighting | ✅ (IPF, entropy, sparse) | ❌ | ❌ | ❌ |
-| PRDC evaluation | ✅ | ❌ | ❌ | ❌ |
+| Feature | microplex | synthpop |
+|---------|-------|----------|
+| Multi-source fusion | ✅ | ❌ |
+| Zero-inflation handling | ✅ | ⚠️ |
+| Multiple synthesis methods | ✅ (QRF, QDNN, MAF) | ✅ (CART) |
+| Survey reweighting | ✅ (IPF, entropy, sparse) | ❌ |
+| PRDC evaluation | ✅ | ❌ |
 
 ### Use Cases
 
@@ -158,7 +158,6 @@ See [benchmarks/](benchmarks/) for synthesis method comparisons:
 - **QRF / ZI-QRF**: Quantile regression forests (with/without zero-inflation)
 - **QDNN / ZI-QDNN**: Quantile deep neural networks
 - **MAF / ZI-MAF**: Masked autoregressive flows
-- **CT-GAN / TVAE**: Deep generative baselines (from SDV)
 
 ## Citation
 
