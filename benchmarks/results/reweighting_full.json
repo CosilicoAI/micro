@@ -3,290 +3,124 @@
   "methods": {
     "IPF": {
       "method_name": "IPF",
-      "mean_relative_error": 0.093213,
-      "max_relative_error": 0.218815,
-      "weight_cv": 0.3554,
-      "sparsity": 0.0024,
-      "elapsed_seconds": 0.07,
+      "mean_relative_error": 0.126112,
+      "max_relative_error": 0.201779,
+      "weight_cv": 0.4728,
+      "sparsity": 0.0174,
+      "elapsed_seconds": 0.04,
       "per_target_errors": [
         {
           "target_name": "age_group=65+",
           "target_value": 1135.0,
-          "actual_value": 886.6448186982275,
-          "relative_error": 0.2188151377108128
+          "actual_value": 905.9803923704176,
+          "relative_error": 0.20177938998201095
         },
         {
           "target_name": "age_group=35-54",
           "target_value": 1513.0,
-          "actual_value": 1181.9326475370644,
-          "relative_error": 0.21881517016717486
+          "actual_value": 1207.7077028041685,
+          "relative_error": 0.20177944295824948
         },
         {
           "target_name": "age_group=0-17",
           "target_value": 1128.0,
-          "actual_value": 881.1764843909596,
-          "relative_error": 0.2188151734122699
+          "actual_value": 900.3927850834152,
+          "relative_error": 0.20177944584803614
         },
         {
           "target_name": "age_group=18-34",
           "target_value": 971.0,
-          "actual_value": 758.5304679600694,
-          "relative_error": 0.21881517202876483
+          "actual_value": 775.0721526237958,
+          "relative_error": 0.20177945146879941
         },
         {
           "target_name": "age_group=55-64",
           "target_value": 536.0,
-          "actual_value": 418.7150751784842,
-          "relative_error": 0.21881515824909664
+          "actual_value": 427.8462302020474,
+          "relative_error": 0.2017794212648369
         },
         {
           "target_name": "is_male=0.0",
           "target_value": 2222.0,
-          "actual_value": 2174.577395463156,
-          "relative_error": 0.021342306272207075
+          "actual_value": 2221.999614386694,
+          "relative_error": 1.7354334212746764e-07
         },
         {
           "target_name": "is_male=1.0",
           "target_value": 1995.0,
-          "actual_value": 1952.4220983016487,
-          "relative_error": 0.021342306615714936
-        },
-        {
-          "target_name": "hispanic=2.0",
-          "target_value": 3787.0,
-          "actual_value": 3468.474724447641,
-          "relative_error": 0.08411018630904643
-        },
-        {
-          "target_name": "hispanic=1.0",
-          "target_value": 719.0,
-          "actual_value": 658.5247693171636,
-          "relative_error": 0.08411019566458464
-        },
-        {
-          "target_name": "race=1.0",
-          "target_value": 3355.0,
-          "actual_value": 3354.999591750706,
-          "relative_error": 1.2168384327753774e-07
-        },
-        {
-          "target_name": "race=2.0",
-          "target_value": 298.0,
-          "actual_value": 297.99995925762096,
-          "relative_error": 1.3671939275858395e-07
-        },
-        {
-          "target_name": "race=3.0",
-          "target_value": 263.0,
-          "actual_value": 262.99996778267587,
-          "relative_error": 1.2249933130396865e-07
-        },
-        {
-          "target_name": "race=4.0",
-          "target_value": 211.0,
-          "actual_value": 210.9999749738027,
-          "relative_error": 1.1860757017292904e-07
+          "actual_value": 1994.9996486971509,
+          "relative_error": 1.760916537041385e-07
         },
         {
           "target_name": "weight",
-          "target_value": 31439440.0,
-          "actual_value": 31439440.000000004,
-          "relative_error": 1.1849098770404035e-16
+          "target_value": 36363788.0,
+          "actual_value": 36363787.99999999,
+          "relative_error": 2.0489011202363813e-16
         }
       ]
     },
     "Entropy": {
       "method_name": "Entropy",
-      "mean_relative_error": 0.144718,
-      "max_relative_error": 0.38072,
-      "weight_cv": 0.4444,
-      "sparsity": 0.0024,
-      "elapsed_seconds": 0.26,
+      "mean_relative_error": 0.119485,
+      "max_relative_error": 0.284237,
+      "weight_cv": 0.4364,
+      "sparsity": 0.0174,
+      "elapsed_seconds": 0.37,
       "per_target_errors": [
         {
           "target_name": "age_group=65+",
           "target_value": 1135.0,
-          "actual_value": 967.9731215073693,
-          "relative_error": 0.14716024536795652
+          "actual_value": 982.7286206569046,
+          "relative_error": 0.13415980558863033
         },
         {
           "target_name": "age_group=35-54",
           "target_value": 1513.0,
-          "actual_value": 1346.0205462504332,
-          "relative_error": 0.11036315515503424
+          "actual_value": 1360.496880783291,
+          "relative_error": 0.10079518784977456
         },
         {
           "target_name": "age_group=0-17",
           "target_value": 1128.0,
-          "actual_value": 961.1459610805692,
-          "relative_error": 0.1479202472689989
+          "actual_value": 975.672153735962,
+          "relative_error": 0.13504241690074295
         },
         {
           "target_name": "age_group=18-34",
           "target_value": 971.0,
-          "actual_value": 804.0939284054873,
-          "relative_error": 0.1718909079243179
+          "actual_value": 818.6827258408373,
+          "relative_error": 0.15686639975196984
         },
         {
           "target_name": "age_group=55-64",
           "target_value": 536.0,
-          "actual_value": 369.06789096509726,
-          "relative_error": 0.3114405019307887
+          "actual_value": 383.6491698195407,
+          "relative_error": 0.28423662347100614
         },
         {
           "target_name": "is_male=0.0",
           "target_value": 2222.0,
-          "actual_value": 2337.704098377417,
-          "relative_error": 0.052072051474985066
+          "actual_value": 2374.057175783895,
+          "relative_error": 0.06843257235998884
         },
         {
           "target_name": "is_male=1.0",
           "target_value": 1995.0,
-          "actual_value": 2110.5973498315398,
-          "relative_error": 0.05794353375014524
-        },
-        {
-          "target_name": "hispanic=2.0",
-          "target_value": 3787.0,
-          "actual_value": 3758.1371609191083,
-          "relative_error": 0.007621557718746163
-        },
-        {
-          "target_name": "hispanic=1.0",
-          "target_value": 719.0,
-          "actual_value": 690.164287289848,
-          "relative_error": 0.04010530279576085
-        },
-        {
-          "target_name": "race=1.0",
-          "target_value": 3355.0,
-          "actual_value": 3435.3508948171566,
-          "relative_error": 0.023949596070687508
-        },
-        {
-          "target_name": "race=2.0",
-          "target_value": 298.0,
-          "actual_value": 378.31081590588656,
-          "relative_error": 0.26949938223451864
-        },
-        {
-          "target_name": "race=3.0",
-          "target_value": 263.0,
-          "actual_value": 343.3079001298366,
-          "relative_error": 0.30535323243283874
-        },
-        {
-          "target_name": "race=4.0",
-          "target_value": 211.0,
-          "actual_value": 291.3318373560769,
-          "relative_error": 0.38071960832263935
+          "actual_value": 2147.1723750526403,
+          "relative_error": 0.07627687972563423
         },
         {
           "target_name": "weight",
-          "target_value": 31439440.0,
-          "actual_value": 31439974.60228288,
-          "relative_error": 1.7004192278289206e-05
-        }
-      ]
-    },
-    "SparseCalibrator": {
-      "method_name": "SparseCalibrator",
-      "mean_relative_error": 0.093214,
-      "max_relative_error": 0.218817,
-      "weight_cv": 0.3353,
-      "sparsity": 0.0211,
-      "elapsed_seconds": 0.02,
-      "per_target_errors": [
-        {
-          "target_name": "age_group=65+",
-          "target_value": 1135.0,
-          "actual_value": 886.643905044474,
-          "relative_error": 0.21881594269209342
-        },
-        {
-          "target_name": "age_group=35-54",
-          "target_value": 1513.0,
-          "actual_value": 1181.9306431782272,
-          "relative_error": 0.21881649492516375
-        },
-        {
-          "target_name": "age_group=0-17",
-          "target_value": 1128.0,
-          "actual_value": 881.1749227692338,
-          "relative_error": 0.21881655782869341
-        },
-        {
-          "target_name": "age_group=18-34",
-          "target_value": 971.0,
-          "actual_value": 758.5291317177023,
-          "relative_error": 0.2188165481795033
-        },
-        {
-          "target_name": "age_group=55-64",
-          "target_value": 536.0,
-          "actual_value": 418.7144810025655,
-          "relative_error": 0.2188162667862584
-        },
-        {
-          "target_name": "is_male=0.0",
-          "target_value": 2222.0,
-          "actual_value": 2174.5740452270657,
-          "relative_error": 0.02134381402922338
-        },
-        {
-          "target_name": "is_male=1.0",
-          "target_value": 1995.0,
-          "actual_value": 1952.4190384851368,
-          "relative_error": 0.021343840358327443
-        },
-        {
-          "target_name": "hispanic=2.0",
-          "target_value": 3787.0,
-          "actual_value": 3468.469428628793,
-          "relative_error": 0.0841115847296559
-        },
-        {
-          "target_name": "hispanic=1.0",
-          "target_value": 719.0,
-          "actual_value": 658.5236550834097,
-          "relative_error": 0.08411174536382514
-        },
-        {
-          "target_name": "race=1.0",
-          "target_value": 3355.0,
-          "actual_value": 3354.9944640859167,
-          "relative_error": 1.6500489071054744e-06
-        },
-        {
-          "target_name": "race=2.0",
-          "target_value": 298.0,
-          "actual_value": 297.99940556834076,
-          "relative_error": 1.9947371115358082e-06
-        },
-        {
-          "target_name": "race=3.0",
-          "target_value": 263.0,
-          "actual_value": 262.9995578563268,
-          "relative_error": 1.681154650886623e-06
-        },
-        {
-          "target_name": "race=4.0",
-          "target_value": 211.0,
-          "actual_value": 210.99965620161836,
-          "relative_error": 1.6293762162817618e-06
-        },
-        {
-          "target_name": "weight",
-          "target_value": 31439440.0,
-          "actual_value": 31439513.3384616,
-          "relative_error": 2.332689818910389e-06
+          "target_value": 36363788.0,
+          "actual_value": 36361246.71655723,
+          "relative_error": 6.988500325579186e-05
         }
       ]
     },
     "L1-Sparse": {
       "method_name": "L1-Sparse",
-      "mean_relative_error": 3.182941,
-      "max_relative_error": 5.739553,
+      "mean_relative_error": 0.960723,
+      "max_relative_error": 1.392724,
       "weight_cv": 0.0,
       "sparsity": 0.0,
       "elapsed_seconds": 0.01,
@@ -294,93 +128,57 @@
         {
           "target_name": "age_group=65+",
           "target_value": 1135.0,
-          "actual_value": 4893.944752841659,
-          "relative_error": 3.3118455972173204
+          "actual_value": 2331.3,
+          "relative_error": 1.0540088105726875
         },
         {
           "target_name": "age_group=35-54",
           "target_value": 1513.0,
-          "actual_value": 4150.985461274121,
-          "relative_error": 1.7435462401018644
+          "actual_value": 2262.9000000000005,
+          "relative_error": 0.49563780568407173
         },
         {
           "target_name": "age_group=0-17",
           "target_value": 1128.0,
-          "actual_value": 3340.9201691779012,
-          "relative_error": 1.9618086606187068
+          "actual_value": 1880.9999999999995,
+          "relative_error": 0.6675531914893613
         },
         {
           "target_name": "age_group=18-34",
           "target_value": 971.0,
-          "actual_value": 3283.4007401533177,
-          "relative_error": 2.3814631721455384
+          "actual_value": 1742.2999999999997,
+          "relative_error": 0.7943357363542737
         },
         {
           "target_name": "age_group=55-64",
           "target_value": 536.0,
-          "actual_value": 2463.7488765529997,
-          "relative_error": 3.596546411479477
+          "actual_value": 1282.5,
+          "relative_error": 1.392723880597015
         },
         {
           "target_name": "is_male=0.0",
           "target_value": 2222.0,
-          "actual_value": 9404.426645519427,
-          "relative_error": 3.2324152320069426
+          "actual_value": 4896.299999999999,
+          "relative_error": 1.2035553555355532
         },
         {
           "target_name": "is_male=1.0",
           "target_value": 1995.0,
-          "actual_value": 8728.57335448057,
-          "relative_error": 3.375224739088005
-        },
-        {
-          "target_name": "hispanic=2.0",
-          "target_value": 3787.0,
-          "actual_value": 14883.152260111025,
-          "relative_error": 2.930063971510701
-        },
-        {
-          "target_name": "hispanic=1.0",
-          "target_value": 719.0,
-          "actual_value": 3249.8477398889772,
-          "relative_error": 3.5199551319735427
-        },
-        {
-          "target_name": "race=1.0",
-          "target_value": 3355.0,
-          "actual_value": 14298.371398361089,
-          "relative_error": 3.2618096567395196
-        },
-        {
-          "target_name": "race=2.0",
-          "target_value": 298.0,
-          "actual_value": 2008.3867301083797,
-          "relative_error": 5.7395527855985895
-        },
-        {
-          "target_name": "race=3.0",
-          "target_value": 263.0,
-          "actual_value": 982.623579169971,
-          "relative_error": 2.7362113276424753
-        },
-        {
-          "target_name": "race=4.0",
-          "target_value": 211.0,
-          "actual_value": 843.6182923605604,
-          "relative_error": 2.9981909590547886
+          "actual_value": 4603.7,
+          "relative_error": 1.3076190476190475
         },
         {
           "target_name": "weight",
-          "target_value": 31439440.0,
-          "actual_value": 150045842.9000924,
-          "relative_error": 3.7725354809148124
+          "target_value": 36363788.0,
+          "actual_value": 64376565.427127466,
+          "relative_error": 0.7703481668941493
         }
       ]
     },
     "L0-Sparse": {
       "method_name": "L0-Sparse",
-      "mean_relative_error": 3.182941,
-      "max_relative_error": 5.739553,
+      "mean_relative_error": 0.960723,
+      "max_relative_error": 1.392724,
       "weight_cv": 0.0,
       "sparsity": 0.0,
       "elapsed_seconds": 0.01,
@@ -388,187 +186,173 @@
         {
           "target_name": "age_group=65+",
           "target_value": 1135.0,
-          "actual_value": 4893.944752841659,
-          "relative_error": 3.3118455972173204
+          "actual_value": 2331.3,
+          "relative_error": 1.0540088105726875
         },
         {
           "target_name": "age_group=35-54",
           "target_value": 1513.0,
-          "actual_value": 4150.985461274121,
-          "relative_error": 1.7435462401018644
+          "actual_value": 2262.9000000000005,
+          "relative_error": 0.49563780568407173
         },
         {
           "target_name": "age_group=0-17",
           "target_value": 1128.0,
-          "actual_value": 3340.9201691779012,
-          "relative_error": 1.9618086606187068
+          "actual_value": 1880.9999999999995,
+          "relative_error": 0.6675531914893613
         },
         {
           "target_name": "age_group=18-34",
           "target_value": 971.0,
-          "actual_value": 3283.4007401533177,
-          "relative_error": 2.3814631721455384
+          "actual_value": 1742.2999999999997,
+          "relative_error": 0.7943357363542737
         },
         {
           "target_name": "age_group=55-64",
           "target_value": 536.0,
-          "actual_value": 2463.7488765529997,
-          "relative_error": 3.596546411479477
+          "actual_value": 1282.5,
+          "relative_error": 1.392723880597015
         },
         {
           "target_name": "is_male=0.0",
           "target_value": 2222.0,
-          "actual_value": 9404.426645519427,
-          "relative_error": 3.2324152320069426
+          "actual_value": 4896.299999999999,
+          "relative_error": 1.2035553555355532
         },
         {
           "target_name": "is_male=1.0",
           "target_value": 1995.0,
-          "actual_value": 8728.57335448057,
-          "relative_error": 3.375224739088005
-        },
-        {
-          "target_name": "hispanic=2.0",
-          "target_value": 3787.0,
-          "actual_value": 14883.152260111025,
-          "relative_error": 2.930063971510701
-        },
-        {
-          "target_name": "hispanic=1.0",
-          "target_value": 719.0,
-          "actual_value": 3249.8477398889772,
-          "relative_error": 3.5199551319735427
-        },
-        {
-          "target_name": "race=1.0",
-          "target_value": 3355.0,
-          "actual_value": 14298.371398361089,
-          "relative_error": 3.2618096567395196
-        },
-        {
-          "target_name": "race=2.0",
-          "target_value": 298.0,
-          "actual_value": 2008.3867301083797,
-          "relative_error": 5.7395527855985895
-        },
-        {
-          "target_name": "race=3.0",
-          "target_value": 263.0,
-          "actual_value": 982.623579169971,
-          "relative_error": 2.7362113276424753
-        },
-        {
-          "target_name": "race=4.0",
-          "target_value": 211.0,
-          "actual_value": 843.6182923605604,
-          "relative_error": 2.9981909590547886
+          "actual_value": 4603.7,
+          "relative_error": 1.3076190476190475
         },
         {
           "target_name": "weight",
-          "target_value": 31439440.0,
-          "actual_value": 150045842.9000924,
-          "relative_error": 3.7725354809148124
+          "target_value": 36363788.0,
+          "actual_value": 64376565.427127466,
+          "relative_error": 0.7703481668941493
+        }
+      ]
+    },
+    "SparseCalibrator": {
+      "method_name": "SparseCalibrator",
+      "mean_relative_error": 0.126112,
+      "max_relative_error": 0.201779,
+      "weight_cv": 0.3838,
+      "sparsity": 0.011,
+      "elapsed_seconds": 0.02,
+      "per_target_errors": [
+        {
+          "target_name": "age_group=65+",
+          "target_value": 1135.0,
+          "actual_value": 905.9808651422023,
+          "relative_error": 0.20177897344299353
+        },
+        {
+          "target_name": "age_group=35-54",
+          "target_value": 1513.0,
+          "actual_value": 1207.7087887749792,
+          "relative_error": 0.2017787251982953
+        },
+        {
+          "target_name": "age_group=0-17",
+          "target_value": 1128.0,
+          "actual_value": 900.3936228242288,
+          "relative_error": 0.2017787031700099
+        },
+        {
+          "target_name": "age_group=18-34",
+          "target_value": 971.0,
+          "actual_value": 775.0729438230478,
+          "relative_error": 0.20177863663949763
+        },
+        {
+          "target_name": "age_group=55-64",
+          "target_value": 536.0,
+          "actual_value": 427.84653810649337,
+          "relative_error": 0.20177884681624372
+        },
+        {
+          "target_name": "is_male=0.0",
+          "target_value": 2222.0,
+          "actual_value": 2222.0014136292384,
+          "relative_error": 6.361967769638637e-07
+        },
+        {
+          "target_name": "is_male=1.0",
+          "target_value": 1995.0,
+          "actual_value": 1995.001345041713,
+          "relative_error": 6.742063724140962e-07
+        },
+        {
+          "target_name": "weight",
+          "target_value": 36363788.0,
+          "actual_value": 36363745.44276284,
+          "relative_error": 1.170319141756796e-06
         }
       ]
     },
     "HardConcrete": {
       "method_name": "HardConcrete",
-      "mean_relative_error": 136.001668,
-      "max_relative_error": 255.531407,
-      "weight_cv": 1.5268,
-      "sparsity": 0.5282,
-      "elapsed_seconds": 0.83,
+      "mean_relative_error": 0.084555,
+      "max_relative_error": 0.150165,
+      "weight_cv": 4.2809,
+      "sparsity": 0.9366,
+      "elapsed_seconds": 1.81,
       "per_target_errors": [
         {
           "target_name": "age_group=65+",
           "target_value": 1135.0,
-          "actual_value": 97422.6875,
-          "relative_error": 84.83496696035242
+          "actual_value": 1034.3841552734375,
+          "relative_error": 0.08864832134498898
         },
         {
           "target_name": "age_group=35-54",
           "target_value": 1513.0,
-          "actual_value": 151036.0625,
-          "relative_error": 98.82555353602115
+          "actual_value": 1345.53759765625,
+          "relative_error": 0.11068235449025116
         },
         {
           "target_name": "age_group=0-17",
           "target_value": 1128.0,
-          "actual_value": 118835.2734375,
-          "relative_error": 104.35041971409575
+          "actual_value": 1034.7598876953125,
+          "relative_error": 0.08265967402897828
         },
         {
           "target_name": "age_group=18-34",
           "target_value": 971.0,
-          "actual_value": 121354.453125,
-          "relative_error": 123.97883946961895
+          "actual_value": 911.2149658203125,
+          "relative_error": 0.06157058102954428
         },
         {
           "target_name": "age_group=55-64",
           "target_value": 536.0,
-          "actual_value": 68462.2578125,
-          "relative_error": 126.72809293376865
+          "actual_value": 516.6414794921875,
+          "relative_error": 0.036116642738456155
         },
         {
           "target_name": "is_male=0.0",
           "target_value": 2222.0,
-          "actual_value": 282441.3125,
-          "relative_error": 126.11130175517552
+          "actual_value": 2555.66748046875,
+          "relative_error": 0.15016538274921243
         },
         {
           "target_name": "is_male=1.0",
           "target_value": 1995.0,
-          "actual_value": 274669.40625,
-          "relative_error": 136.67890037593986
-        },
-        {
-          "target_name": "hispanic=2.0",
-          "target_value": 3787.0,
-          "actual_value": 450134.78125,
-          "relative_error": 117.86315850277265
-        },
-        {
-          "target_name": "hispanic=1.0",
-          "target_value": 719.0,
-          "actual_value": 106975.9453125,
-          "relative_error": 147.7843467489569
-        },
-        {
-          "target_name": "race=1.0",
-          "target_value": 3355.0,
-          "actual_value": 422336.9375,
-          "relative_error": 124.88284277198211
-        },
-        {
-          "target_name": "race=2.0",
-          "target_value": 298.0,
-          "actual_value": 76446.359375,
-          "relative_error": 255.5314072986577
-        },
-        {
-          "target_name": "race=3.0",
-          "target_value": 263.0,
-          "actual_value": 32454.70703125,
-          "relative_error": 122.40192787547528
-        },
-        {
-          "target_name": "race=4.0",
-          "target_value": 211.0,
-          "actual_value": 25872.703125,
-          "relative_error": 121.61944609004739
+          "actual_value": 2286.87060546875,
+          "relative_error": 0.14630105537280702
         },
         {
           "target_name": "weight",
-          "target_value": 31439440.0,
-          "actual_value": 6710187134.9916,
-          "relative_error": 212.4321455786617
+          "target_value": 36363788.0,
+          "actual_value": 36352965.11161588,
+          "relative_error": 0.0002976281894537136
         }
       ]
     }
   },
-  "timestamp": "2026-02-09T06:52:17",
-  "total_elapsed_seconds": 1.2,
-  "n_records": 3783,
-  "n_marginal_targets": 13,
+  "timestamp": "2026-02-09T08:10:49",
+  "total_elapsed_seconds": 2.3,
+  "n_records": 5000,
+  "n_marginal_targets": 7,
   "n_continuous_targets": 1
 }

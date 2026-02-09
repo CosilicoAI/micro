@@ -1413,6 +1413,15 @@ class HardConcreteCalibrator:
         else:
             init_weights = np.ones(len(data))
 
+        # Rescale init weights so A_norm @ init_weights ≈ b_norm.
+        # Without this, survey weights (e.g. CPS ~6000) produce initial
+        # constraint violations of 1000x+, making gradient descent fail.
+        achieved = A_norm @ init_weights
+        positive = achieved > 1e-10
+        if positive.any():
+            scale = np.mean(b_norm[positive] / achieved[positive])
+            init_weights = init_weights * scale
+
         # Create and fit model
         self.model_ = SparseCalibrationWeights(
             n_features=len(data),

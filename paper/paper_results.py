@@ -135,6 +135,9 @@ class PaperResults:
     n_seeds: int = 1
     max_rows_per_source: int = 20_000
 
+    # Optional reweighting methods (may not be in all benchmark runs)
+    rw_hardconcrete: ReweightingMethodStats = None
+
     # Synthesis derived comparisons
     @property
     def _synthesis_methods(self) -> list[MethodStats]:
@@ -184,7 +187,10 @@ class PaperResults:
     # Reweighting derived comparisons
     @property
     def _calibration_methods(self) -> list[ReweightingMethodStats]:
-        return [self.rw_ipf, self.rw_entropy, self.rw_sparse_cal]
+        methods = [self.rw_ipf, self.rw_entropy, self.rw_sparse_cal]
+        if self.rw_hardconcrete is not None:
+            methods.append(self.rw_hardconcrete)
+        return methods
 
     @property
     def best_rw_method(self) -> str:
@@ -316,6 +322,7 @@ def load_results(
         rw_sparse_cal=_extract_rw_method(rw_data, "SparseCalibrator"),
         rw_l1=_extract_rw_method(rw_data, "L1-Sparse"),
         rw_l0=_extract_rw_method(rw_data, "L0-Sparse"),
+        rw_hardconcrete=_extract_rw_method(rw_data, "HardConcrete") if "HardConcrete" in rw_data.get("methods", {}) else None,
         rw_n_records=rw_data["n_records"],
         rw_n_marginal_targets=rw_data["n_marginal_targets"],
         rw_n_continuous_targets=rw_data["n_continuous_targets"],

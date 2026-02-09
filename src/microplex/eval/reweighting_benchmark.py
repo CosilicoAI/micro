@@ -367,7 +367,7 @@ def get_default_reweighting_methods() -> list:
     # Add HardConcrete if l0-python is available
     try:
         import l0
-        methods.append(HardConcreteMethod(lambda_l0=1e-5, epochs=500))
+        methods.append(HardConcreteMethod(lambda_l0=1e-4, epochs=2000))
     except ImportError:
         pass
 

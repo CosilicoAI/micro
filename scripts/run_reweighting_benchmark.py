@@ -81,24 +81,8 @@ def build_targets_from_data(df: pd.DataFrame) -> tuple[pd.DataFrame, dict, dict]
         marginal_targets["is_male"] = perturbed
         print(f"  Target: is_male ({len(perturbed)} categories)")
 
-    # Use low-NaN categorical columns from survey-specific data
-    for col in df.columns:
-        if col in ("weight", "person_id", "household_id", "age", "is_male", "age_group"):
-            continue
-        if col.startswith("_"):
-            continue
-        if df[col].isna().mean() > 0.3:  # Allow up to 30% NaN
-            continue
-        if df[col].nunique() <= 10 and df[col].nunique() >= 2:
-            counts = df[col].value_counts(dropna=True)
-            perturbed = {}
-            for cat, count in counts.items():
-                if pd.isna(cat):
-                    continue
-                perturbed[cat] = round(count * rng.uniform(0.7, 1.3))
-            if perturbed and len(marginal_targets) < 4:
-                marginal_targets[col] = perturbed
-                print(f"  Target: {col} ({len(perturbed)} categories)")
+    # Only use age_group + is_male as categorical targets for reproducibility.
+    # Auto-discovery of additional columns changes results when data changes.
 
     # Continuous targets — use total weight as population count target
     total_weight = df["weight"].sum()
@@ -136,7 +120,7 @@ def build_methods(method_names: list[str] = None):
         "l2": L2SparseMethod(),
         "l0": L0SparseMethod(),
         "sparse": SparseCalibratorMethod(sparsity_weight=0.01),
-        "hardconcrete": HardConcreteMethod(lambda_l0=1e-5, epochs=500),
+        "hardconcrete": HardConcreteMethod(lambda_l0=1e-4, epochs=2000),
     }
 
     if method_names is None:

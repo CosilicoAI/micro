@@ -84,11 +84,13 @@ All results are reported as means ± standard errors across {eval}`r.n_seeds` ra
 
 ### Calibration via reweighting
 
-After synthesis, I calibrate the microdata against administrative targets by adjusting record weights. I compare five methods spanning two families.
+After synthesis, I calibrate the microdata against administrative targets by adjusting record weights. I compare six methods spanning three families.
 
 **Calibration methods** solve for weights that match both categorical marginals and continuous targets simultaneously. Iterative proportional fitting (IPF) {cite:p}`deming1940least` is the classical raking algorithm that alternately adjusts weights to match each marginal target. Entropy balancing {cite:p}`hainmueller2012entropy`, originally developed for causal inference but applicable to any moment-matching reweighting problem, minimizes the Kullback-Leibler divergence from the original weights subject to target constraints: $\min_w \sum_i w_i \log(w_i / w_i^0)$ s.t. $Aw = b$, where $A$ is the constraint matrix and $b$ the vector of target values. SparseCalibrator, building on calibration estimator theory {cite:p}`deville1992calibration`, selects a sparse subset of records via cross-category proportional sampling, then calibrates the selected subset using iterative proportional fitting to match both categorical and continuous targets.
 
 **Sparse optimization methods** ($L_1$-sparse and $L_0$-sparse) minimize the weight norm subject to categorical constraints only, solving $\min_w \|w\|_p$ s.t. $Aw = b$ for subset selection rather than population calibration.
+
+**Differentiable sparse calibration** (HardConcrete) uses Hard Concrete gates {cite:p}`louizos2018learning` to learn both which records to include and what weight to assign them, jointly optimizing $L_0$ sparsity and target-matching accuracy via gradient descent. The implementation wraps the `l0-python` package. A key implementation detail: the initial weights must be rescaled so that the initial constraint violation is small (within ~30% of targets), otherwise gradient descent in the log-weight parameterization fails to converge from an initial point thousands of times larger than the target.
 
 ## Data
 
@@ -185,22 +187,22 @@ for name, m in rw_data["methods"].items():
         "Mean rel. error": f"{m['mean_relative_error']:.1%}",
         "Max rel. error": f"{m['max_relative_error']:.1%}",
         "Weight CV": f"{m['weight_cv']:.3f}",
+        "Sparsity": f"{m['sparsity']:.1%}",
         "Time (s)": f"{m['elapsed_seconds']:.2f}",
     })
 df = pd.DataFrame(rows)
-# Show calibration methods first (sorted by mean error), then sparse
-cal_methods = df[df["Method"].isin(["Entropy", "IPF", "SparseCalibrator"])]
-sparse_methods = df[~df["Method"].isin(["Entropy", "IPF", "SparseCalibrator"])]
-df = pd.concat([cal_methods.sort_values("Mean rel. error"), sparse_methods])
+df = df.sort_values("Mean rel. error")
 df.index = range(1, len(df) + 1)
 df
 ```
 
-Among calibration methods, entropy balancing achieves the lowest mean relative error ({eval}`r.rw_entropy.mean_error_pct`), {eval}`r.entropy_vs_ipf_error_reduction` lower than IPF ({eval}`r.rw_ipf.mean_error_pct`). SparseCalibrator matches IPF accuracy while producing {eval}`r.sparse_cal_cv_vs_ipf` lower weight coefficient of variation ({eval}`r.rw_sparse_cal.cv_str` vs. {eval}`r.rw_ipf.cv_str`), meaning smoother weights that are less likely to amplify noise in downstream estimates.
+HardConcrete {cite:p}`louizos2018learning` achieves the lowest mean relative error ({eval}`r.rw_hardconcrete.mean_error_pct`) while using only {eval}`f"{1 - r.rw_hardconcrete.sparsity:.1%}"` of records ({eval}`r.rw_hardconcrete.sparsity_pct` sparsity). This method uses differentiable $L_0$ gates based on the Hard Concrete distribution to jointly optimize which records to keep and what weights to assign, implemented via the `l0-python` package. The initial weight rescaling described below is critical: without it, gradient descent fails to converge because survey weights (mean ~6,800) produce initial constraint violations of 5,000x or more.
+
+Among non-sparse calibration methods, entropy balancing achieves the lowest mean error ({eval}`r.rw_entropy.mean_error_pct`), {eval}`r.entropy_vs_ipf_error_reduction` lower than IPF ({eval}`r.rw_ipf.mean_error_pct`). SparseCalibrator matches IPF accuracy while producing {eval}`r.sparse_cal_cv_vs_ipf` lower weight coefficient of variation ({eval}`r.rw_sparse_cal.cv_str` vs. {eval}`r.rw_ipf.cv_str`), meaning smoother weights that are less likely to amplify noise in downstream estimates.
 
 The $L_1$- and $L_0$-sparse methods show high errors ({eval}`r.rw_l1.mean_error_pct`) because they optimize for subset selection (minimizing $\|w\|_p$) rather than population calibration. They satisfy categorical constraints but cannot match continuous targets, making them unsuitable for general-purpose calibration despite their sparsity advantages. The $L_0$ method, which uses iterative reweighted $L_1$ (IRL1) to approximate the non-convex $L_0$ objective, converges to the $L_1$ solution for this problem, producing numerically identical results.
 
-Entropy and SparseCalibrator exhibit complementary error profiles: entropy achieves lower mean error but higher max error ({eval}`r.rw_entropy.max_error_pct` vs. {eval}`r.rw_sparse_cal.max_error_pct`), while SparseCalibrator provides more uniform error across targets with smoother weights.
+HardConcrete's high weight CV ({eval}`r.rw_hardconcrete.cv_str`) reflects the concentration of weight on few records — an inherent property of sparse solutions. For applications requiring both sparse record selection and smooth weights, a two-stage approach (HardConcrete for record selection, then entropy balancing on the selected subset) may be preferable.
 
 ## Discussion
 
