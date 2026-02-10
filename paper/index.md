@@ -196,13 +196,24 @@ df.index = range(1, len(df) + 1)
 df
 ```
 
-All calibration methods (IPF, entropy, SparseCalibrator) achieve near-zero training error — they satisfy the age and weight constraints exactly. The key comparison is test error on the held-out sex margin, which measures generalization. HardConcrete {cite:p}`louizos2018learning` achieves the lowest test error ({eval}`r.rw_hardconcrete.test_error_pct`) while using only {eval}`f"{1 - r.rw_hardconcrete.sparsity:.1%}"` of records ({eval}`r.rw_hardconcrete.sparsity_pct` sparsity). This method uses differentiable $L_0$ gates based on the Hard Concrete distribution to jointly optimize which records to keep and what weights to assign, implemented via the `l0-python` package. The initial weight rescaling described below is critical: without it, gradient descent fails to converge because survey weights (mean ~6,800) produce initial constraint violations of 5,000x or more.
+All calibration methods (IPF, entropy, SparseCalibrator) achieve near-zero training error — they satisfy the age and weight constraints exactly. The key comparison is test error on the held-out sex margin, which measures generalization.
 
-Among dense calibration methods, entropy balancing and IPF achieve similar test error ({eval}`r.rw_entropy.test_error_pct` and {eval}`r.rw_ipf.test_error_pct` respectively). SparseCalibrator matches their accuracy while producing {eval}`r.sparse_cal_cv_vs_ipf` lower weight coefficient of variation ({eval}`r.rw_sparse_cal.cv_str` vs. {eval}`r.rw_ipf.cv_str`), meaning smoother weights that are less likely to amplify noise in downstream estimates.
+To characterize the accuracy-sparsity tradeoff, I sweep the regularization parameter for each sparse method (SparseCalibrator's $\lambda$ and HardConcrete's $\lambda_{L_0}$) across several orders of magnitude and plot out-of-sample error against the number of records with non-zero weight.
+
+```{figure} figures/reweighting_frontier.png
+:name: fig-reweighting-frontier
+:width: 100%
+
+Reweighting frontier: out-of-sample error on held-out sex margin vs. number of active records. Dense methods (IPF, Entropy) use all records; sparse methods trace a frontier as regularization strength increases. Both sparse methods achieve lower out-of-sample error with fewer records than dense calibration.
+```
+
+{numref}`fig-reweighting-frontier` reveals a counter-intuitive finding: sparser solutions generalize *better* on held-out targets. Dense methods (IPF, Entropy) use all {eval}`f"{r.rw_n_records:,}"` records and achieve ~18% test error. HardConcrete {cite:p}`louizos2018learning` with strong regularization selects fewer than 10 records and achieves under 5% test error — a 4x improvement. SparseCalibrator shows a similar pattern, reaching ~12% test error with ~30 records.
+
+This occurs because dense calibration makes many small weight adjustments across all records to satisfy the training constraints (age group + total weight). These adjustments are uncorrelated with the held-out margin (sex), so they add noise to the test targets. Sparse methods, forced to select a small representative subset, choose records that happen to be more balanced across all dimensions — the regularization acts as implicit generalization pressure. HardConcrete's differentiable $L_0$ gates (Hard Concrete distribution) jointly optimize which records to keep and what weights to assign, implemented via the `l0-python` package. The initial weight rescaling described below is critical: without it, gradient descent fails to converge because survey weights (mean ~6,800) produce initial constraint violations of 5,000x or more.
+
+Among dense calibration methods, entropy balancing and IPF achieve similar test error ({eval}`r.rw_entropy.test_error_pct` and {eval}`r.rw_ipf.test_error_pct` respectively). SparseCalibrator at its default operating point produces {eval}`r.sparse_cal_cv_vs_ipf` lower weight coefficient of variation ({eval}`r.rw_sparse_cal.cv_str` vs. {eval}`r.rw_ipf.cv_str`), meaning smoother weights that are less likely to amplify noise in downstream estimates.
 
 The $L_1$- and $L_0$-sparse methods show substantially worse test error ({eval}`r.rw_l1.test_error_pct`) because they optimize for subset selection (minimizing $\|w\|_p$) rather than population calibration. Their extreme sparsity ({eval}`r.rw_l1.sparsity_pct`) concentrates weight on too few records to maintain representativeness on held-out dimensions. The $L_0$ method, which uses iterative reweighted $L_1$ (IRL1) to approximate the non-convex $L_0$ objective, converges to the $L_1$ solution for this problem, producing numerically identical results.
-
-HardConcrete's high weight CV ({eval}`r.rw_hardconcrete.cv_str`) reflects the concentration of weight on few records — an inherent property of sparse solutions. For applications requiring both sparse record selection and smooth weights, a two-stage approach (HardConcrete for record selection, then entropy balancing on the selected subset) may be preferable.
 
 ## Discussion
 
