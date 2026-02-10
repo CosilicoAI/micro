@@ -66,10 +66,20 @@ class ReweightingMethodStats:
     weight_cv: float
     sparsity: float
     elapsed: float
+    train_mean_error: float = 0.0
+    test_mean_error: float = 0.0
 
     @property
     def mean_error_pct(self) -> str:
         return f"{self.mean_relative_error:.1%}"
+
+    @property
+    def train_error_pct(self) -> str:
+        return f"{self.train_mean_error:.1%}"
+
+    @property
+    def test_error_pct(self) -> str:
+        return f"{self.test_mean_error:.1%}"
 
     @property
     def max_error_pct(self) -> str:
@@ -123,6 +133,8 @@ class PaperResults:
     rw_n_records: int = 5000
     rw_n_marginal_targets: int = 7
     rw_n_continuous_targets: int = 1
+    rw_n_train_targets: int = 6
+    rw_n_test_targets: int = 2
 
     # Data characteristics
     n_sipp: int = 476_744
@@ -134,6 +146,9 @@ class PaperResults:
     # Multi-seed info
     n_seeds: int = 1
     max_rows_per_source: int = 20_000
+
+    # Optional reweighting methods (may not be in all benchmark runs)
+    rw_hardconcrete: ReweightingMethodStats = None
 
     # Synthesis derived comparisons
     @property
@@ -184,7 +199,10 @@ class PaperResults:
     # Reweighting derived comparisons
     @property
     def _calibration_methods(self) -> list[ReweightingMethodStats]:
-        return [self.rw_ipf, self.rw_entropy, self.rw_sparse_cal]
+        methods = [self.rw_ipf, self.rw_entropy, self.rw_sparse_cal]
+        if self.rw_hardconcrete is not None:
+            methods.append(self.rw_hardconcrete)
+        return methods
 
     @property
     def best_rw_method(self) -> str:
@@ -264,6 +282,8 @@ def _extract_rw_method(data: dict, key: str) -> ReweightingMethodStats:
         weight_cv=m["weight_cv"],
         sparsity=m["sparsity"],
         elapsed=m["elapsed_seconds"],
+        train_mean_error=m.get("train_mean_error", m["mean_relative_error"]),
+        test_mean_error=m.get("test_mean_error", 0.0),
     )
 
 
@@ -316,9 +336,12 @@ def load_results(
         rw_sparse_cal=_extract_rw_method(rw_data, "SparseCalibrator"),
         rw_l1=_extract_rw_method(rw_data, "L1-Sparse"),
         rw_l0=_extract_rw_method(rw_data, "L0-Sparse"),
+        rw_hardconcrete=_extract_rw_method(rw_data, "HardConcrete") if "HardConcrete" in rw_data.get("methods", {}) else None,
         rw_n_records=rw_data["n_records"],
         rw_n_marginal_targets=rw_data["n_marginal_targets"],
         rw_n_continuous_targets=rw_data["n_continuous_targets"],
+        rw_n_train_targets=rw_data.get("n_train_targets", 6),
+        rw_n_test_targets=rw_data.get("n_test_targets", 2),
     )
 
 

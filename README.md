@@ -12,8 +12,7 @@ Multi-source microdata synthesis and survey reweighting.
 
 - **Conditional relationships**: Generate target variables given demographics
 - **Zero-inflated distributions**: Handle variables that are 0 for many observations
-- **Joint correlations**: Preserve relationships between target variables
-- **Hierarchical structures**: Keep household/firm compositions intact
+- **Multi-source fusion**: Combine variables from surveys with different variable sets
 
 ## Installation
 
@@ -72,13 +71,13 @@ print(f"Using {stats['n_nonzero']} of {stats['n_records']} records")
 
 ## Why `microplex`?
 
-| Feature | microplex | CT-GAN | TVAE | synthpop |
-|---------|-------|--------|------|----------|
-| Multi-source fusion | ✅ | ❌ | ❌ | ❌ |
-| Zero-inflation handling | ✅ | ❌ | ❌ | ⚠️ |
-| Multiple synthesis methods | ✅ (QRF, QDNN, MAF) | ❌ | ❌ | ✅ (CART) |
-| Survey reweighting | ✅ (IPF, entropy, sparse) | ❌ | ❌ | ❌ |
-| PRDC evaluation | ✅ | ❌ | ❌ | ❌ |
+| Feature | microplex | synthpop |
+|---------|-------|----------|
+| Multi-source fusion | ✅ | ❌ |
+| Zero-inflation handling | ✅ | ⚠️ |
+| Multiple synthesis methods | ✅ (QRF, QDNN, MAF) | ✅ (CART) |
+| Survey reweighting | ✅ (IPF, entropy, sparse) | ❌ |
+| PRDC evaluation | ✅ | ❌ |
 
 ### Use Cases
 
@@ -159,7 +158,6 @@ See [benchmarks/](benchmarks/) for synthesis method comparisons:
 - **QRF / ZI-QRF**: Quantile regression forests (with/without zero-inflation)
 - **QDNN / ZI-QDNN**: Quantile deep neural networks
 - **MAF / ZI-MAF**: Masked autoregressive flows
-- **CT-GAN / TVAE**: Deep generative baselines (from SDV)
 
 ## Citation
 
