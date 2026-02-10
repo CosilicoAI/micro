@@ -19,6 +19,24 @@
         "params": {}
       }
     ],
+    "L1-Sparse": [
+      {
+        "n_active": 5,
+        "test_error": 0.773557,
+        "train_error": 0.004294,
+        "sparsity": 0.999,
+        "params": {}
+      }
+    ],
+    "L0-Sparse": [
+      {
+        "n_active": 5,
+        "test_error": 0.773557,
+        "train_error": 0.004294,
+        "sparsity": 0.999,
+        "params": {}
+      }
+    ],
     "SparseCalibrator": [
       {
         "n_active": 5000,
@@ -31,7 +49,7 @@
       },
       {
         "n_active": 4993,
-        "test_error": 0.175575,
+        "test_error": 0.174353,
         "train_error": 1e-06,
         "sparsity": 0.0014,
         "params": {
@@ -40,7 +58,7 @@
       },
       {
         "n_active": 4973,
-        "test_error": 0.17616,
+        "test_error": 0.17451,
         "train_error": 1e-06,
         "sparsity": 0.0054,
         "params": {
@@ -49,7 +67,7 @@
       },
       {
         "n_active": 4948,
-        "test_error": 0.175915,
+        "test_error": 0.177425,
         "train_error": 1e-06,
         "sparsity": 0.0104,
         "params": {
@@ -58,7 +76,7 @@
       },
       {
         "n_active": 4898,
-        "test_error": 0.175875,
+        "test_error": 0.1776,
         "train_error": 1e-06,
         "sparsity": 0.0204,
         "params": {
@@ -67,7 +85,7 @@
       },
       {
         "n_active": 4754,
-        "test_error": 0.176448,
+        "test_error": 0.175142,
         "train_error": 1e-06,
         "sparsity": 0.0492,
         "params": {
@@ -76,7 +94,7 @@
       },
       {
         "n_active": 4521,
-        "test_error": 0.174364,
+        "test_error": 0.17563,
         "train_error": 1e-06,
         "sparsity": 0.0958,
         "params": {
@@ -85,7 +103,7 @@
       },
       {
         "n_active": 4090,
-        "test_error": 0.190783,
+        "test_error": 0.175422,
         "train_error": 1e-06,
         "sparsity": 0.182,
         "params": {
@@ -94,7 +112,7 @@
       },
       {
         "n_active": 3031,
-        "test_error": 0.154128,
+        "test_error": 0.14018,
         "train_error": 1e-06,
         "sparsity": 0.3938,
         "params": {
@@ -103,7 +121,7 @@
       },
       {
         "n_active": 1838,
-        "test_error": 0.190055,
+        "test_error": 0.17543,
         "train_error": 1e-06,
         "sparsity": 0.6324,
         "params": {
@@ -112,7 +130,7 @@
       },
       {
         "n_active": 673,
-        "test_error": 0.136915,
+        "test_error": 0.20525,
         "train_error": 1e-06,
         "sparsity": 0.8654,
         "params": {
@@ -121,7 +139,7 @@
       },
       {
         "n_active": 31,
-        "test_error": 0.118024,
+        "test_error": 0.088716,
         "train_error": 2e-06,
         "sparsity": 0.9938,
         "params": {
@@ -131,110 +149,110 @@
     ],
     "HardConcrete": [
       {
-        "n_active": 4577,
-        "test_error": 0.193587,
-        "train_error": 0.012588,
-        "sparsity": 0.0846,
+        "n_active": 4602,
+        "test_error": 0.179278,
+        "train_error": 0.009796,
+        "sparsity": 0.0796,
         "params": {
           "lambda_l0": 1e-07,
           "epochs": 2000
         }
       },
       {
-        "n_active": 4047,
-        "test_error": 0.183815,
-        "train_error": 0.004831,
-        "sparsity": 0.1906,
+        "n_active": 4016,
+        "test_error": 0.196103,
+        "train_error": 0.014185,
+        "sparsity": 0.1968,
         "params": {
           "lambda_l0": 5e-07,
           "epochs": 2000
         }
       },
       {
-        "n_active": 3467,
-        "test_error": 0.188536,
-        "train_error": 0.005049,
-        "sparsity": 0.3066,
+        "n_active": 3472,
+        "test_error": 0.16823,
+        "train_error": 0.010113,
+        "sparsity": 0.3056,
         "params": {
           "lambda_l0": 1e-06,
           "epochs": 2000
         }
       },
       {
-        "n_active": 1857,
-        "test_error": 0.203589,
-        "train_error": 0.009027,
-        "sparsity": 0.6286,
+        "n_active": 1814,
+        "test_error": 0.179414,
+        "train_error": 0.004673,
+        "sparsity": 0.6372,
         "params": {
           "lambda_l0": 5e-06,
           "epochs": 2000
         }
       },
       {
-        "n_active": 1241,
-        "test_error": 0.184225,
-        "train_error": 0.00672,
-        "sparsity": 0.7518,
+        "n_active": 1245,
+        "test_error": 0.176757,
+        "train_error": 0.006176,
+        "sparsity": 0.751,
         "params": {
           "lambda_l0": 1e-05,
           "epochs": 2000
         }
       },
       {
-        "n_active": 494,
-        "test_error": 0.183371,
-        "train_error": 0.004618,
-        "sparsity": 0.9012,
+        "n_active": 483,
+        "test_error": 0.157259,
+        "train_error": 0.007132,
+        "sparsity": 0.9034,
         "params": {
           "lambda_l0": 5e-05,
           "epochs": 2000
         }
       },
       {
-        "n_active": 302,
-        "test_error": 0.181665,
-        "train_error": 0.006228,
-        "sparsity": 0.9396,
+        "n_active": 298,
+        "test_error": 0.118481,
+        "train_error": 0.003852,
+        "sparsity": 0.9404,
         "params": {
           "lambda_l0": 0.0001,
           "epochs": 2000
         }
       },
       {
-        "n_active": 94,
-        "test_error": 0.10909,
-        "train_error": 0.010076,
-        "sparsity": 0.9812,
+        "n_active": 100,
+        "test_error": 0.13813,
+        "train_error": 0.006001,
+        "sparsity": 0.98,
         "params": {
           "lambda_l0": 0.0005,
           "epochs": 2000
         }
       },
       {
-        "n_active": 52,
-        "test_error": 0.11765,
-        "train_error": 0.02373,
-        "sparsity": 0.9896,
+        "n_active": 61,
+        "test_error": 0.354901,
+        "train_error": 0.006403,
+        "sparsity": 0.9878,
         "params": {
           "lambda_l0": 0.001,
           "epochs": 2000
         }
       },
       {
-        "n_active": 11,
-        "test_error": 0.088384,
-        "train_error": 0.066336,
-        "sparsity": 0.9978,
+        "n_active": 8,
+        "test_error": 0.080927,
+        "train_error": 0.045697,
+        "sparsity": 0.9984,
         "params": {
           "lambda_l0": 0.005,
           "epochs": 2000
         }
       },
       {
-        "n_active": 7,
-        "test_error": 0.046424,
-        "train_error": 0.065328,
-        "sparsity": 0.9986,
+        "n_active": 6,
+        "test_error": 0.323481,
+        "train_error": 0.144716,
+        "sparsity": 0.9988,
         "params": {
           "lambda_l0": 0.01,
           "epochs": 2000
@@ -242,5 +260,5 @@
       }
     ]
   },
-  "timestamp": "2026-02-10T05:58:11"
+  "timestamp": "2026-02-10T06:04:42"
 }

@@ -130,6 +130,7 @@ def main():
 
     from microplex.eval.reweighting_benchmark import (
         IPFMethod, EntropyMethod, SparseCalibratorMethod, HardConcreteMethod,
+        L1SparseMethod, L0SparseMethod,
     )
 
     # Load data and build targets
@@ -148,6 +149,8 @@ def main():
     for name, method_cls, kwargs in [
         ("IPF", IPFMethod, {}),
         ("Entropy", EntropyMethod, {}),
+        ("L1-Sparse", L1SparseMethod, {}),
+        ("L0-Sparse", L0SparseMethod, {}),
     ]:
         print(f"  {name}...")
         method = method_cls(**kwargs)

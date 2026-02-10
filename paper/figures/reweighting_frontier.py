@@ -3,6 +3,11 @@
 
 Reads reweighting_frontier.json and produces a figure showing the
 accuracy-sparsity tradeoff for each reweighting method family.
+
+SparseCalibrator (L1 family) and HardConcrete (L0 family) trace frontiers
+by sweeping their regularization parameter. L1-Sparse and L0-Sparse are
+the hard-constraint endpoints of each family. IPF and Entropy are dense
+reference points.
 """
 
 import json
@@ -23,18 +28,26 @@ def main():
 
     fig, ax = plt.subplots(figsize=(7, 4.5))
 
-    # --- SparseCalibrator frontier ---
+    # --- SparseCalibrator frontier (L1 family) ---
     sc = data["methods"]["SparseCalibrator"]
     sc_x = [p["n_active"] for p in sc]
     sc_y = [p["test_error"] for p in sc]
-    # Sort by n_active
     order = np.argsort(sc_x)
     sc_x = [sc_x[i] for i in order]
     sc_y = [sc_y[i] for i in order]
     ax.plot(sc_x, sc_y, "s-", color="#2ca02c", linewidth=1.5, markersize=5,
-            label="SparseCalibrator", zorder=3)
+            label=r"SparseCalibrator ($L_1$ family)", zorder=3)
 
-    # --- HardConcrete frontier ---
+    # L1-Sparse endpoint
+    if "L1-Sparse" in data["methods"]:
+        l1 = data["methods"]["L1-Sparse"][0]
+        ax.scatter(l1["n_active"], l1["test_error"], marker="s", color="#2ca02c",
+                   s=100, zorder=5, edgecolors="black", linewidths=1.5)
+        ax.annotate("L1-Sparse\n(hard constraints)", (l1["n_active"], l1["test_error"]),
+                    textcoords="offset points", xytext=(15, 8), fontsize=7,
+                    color="#2ca02c", ha="left")
+
+    # --- HardConcrete frontier (L0 family) ---
     hc = data["methods"]["HardConcrete"]
     hc_x = [p["n_active"] for p in hc]
     hc_y = [p["test_error"] for p in hc]
@@ -42,27 +55,39 @@ def main():
     hc_x = [hc_x[i] for i in order]
     hc_y = [hc_y[i] for i in order]
     ax.plot(hc_x, hc_y, "o-", color="#1f77b4", linewidth=1.5, markersize=5,
-            label="HardConcrete", zorder=3)
+            label=r"HardConcrete ($L_0$ family)", zorder=3)
+
+    # L0-Sparse endpoint
+    if "L0-Sparse" in data["methods"]:
+        l0 = data["methods"]["L0-Sparse"][0]
+        ax.scatter(l0["n_active"], l0["test_error"], marker="o", color="#1f77b4",
+                   s=100, zorder=5, edgecolors="black", linewidths=1.5)
+        ax.annotate("L0-Sparse\n(hard constraints)", (l0["n_active"], l0["test_error"]),
+                    textcoords="offset points", xytext=(15, -18), fontsize=7,
+                    color="#1f77b4", ha="left")
 
     # --- Dense methods as reference points ---
     for name, marker, color in [
         ("IPF", "D", "#d62728"),
         ("Entropy", "^", "#ff7f0e"),
     ]:
-        pts = data["methods"][name]
-        for p in pts:
-            ax.scatter(p["n_active"], p["test_error"], marker=marker, color=color,
-                       s=80, zorder=4, label=name, edgecolors="black", linewidths=0.5)
+        if name in data["methods"]:
+            pts = data["methods"][name]
+            for p in pts:
+                ax.scatter(p["n_active"], p["test_error"], marker=marker, color=color,
+                           s=80, zorder=4, label=name, edgecolors="black", linewidths=0.5)
 
     ax.set_xlabel("Active records (non-zero weight)", fontsize=11)
     ax.set_ylabel("Out-of-sample error\n(held-out sex margin)", fontsize=11)
     ax.set_xscale("log")
     ax.set_xlim(5, n_records * 1.2)
-    ax.set_ylim(0, max(
-        max(p["test_error"] for p in sc),
-        max(p["test_error"] for p in hc),
-        max(p["test_error"] for pts in [data["methods"]["IPF"], data["methods"]["Entropy"]] for p in pts),
-    ) * 1.15)
+
+    # Compute y-axis limits from all data
+    all_errors = []
+    for method_data in data["methods"].values():
+        for p in method_data:
+            all_errors.append(p["test_error"])
+    ax.set_ylim(0, max(all_errors) * 1.15)
 
     ax.legend(fontsize=9, loc="upper right")
     ax.grid(True, alpha=0.2)
