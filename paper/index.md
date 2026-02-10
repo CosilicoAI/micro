@@ -168,7 +168,7 @@ ZI-QRF completes in {eval}`r.zi_qrf.time_str`, compared to ZI-MAF's {eval}`r.zi_
 
 ### Reweighting calibration
 
-I evaluate reweighting methods on {eval}`f"{r.rw_n_records:,}"` records with {eval}`r.rw_n_targets_total` calibration targets ({eval}`r.rw_n_marginal_targets` categorical marginals spanning age group and sex, plus {eval}`r.rw_n_continuous_targets` continuous target for total population weight). Target values are perturbed from the sample distribution by 10-30% to simulate calibration to known population totals. This is a controlled evaluation of algorithmic performance; results may differ when calibrating against real administrative targets.
+I evaluate reweighting methods on {eval}`f"{r.rw_n_records:,}"` records using a train/test split to assess out-of-sample generalization. Methods are calibrated on {eval}`r.rw_n_train_targets` training targets (age group categories plus total population weight), then evaluated on {eval}`r.rw_n_test_targets` held-out test targets (sex categories) that were not used during calibration. Target values are perturbed from the sample distribution by 10-30% to simulate calibration to known population totals. This design measures whether calibrating on one set of demographic margins improves representativeness along dimensions not explicitly targeted — the relevant question for practical survey calibration.
 
 ```{code-cell} python
 :tags: [remove-input]
@@ -184,23 +184,23 @@ rows = []
 for name, m in rw_data["methods"].items():
     rows.append({
         "Method": name,
-        "Mean rel. error": f"{m['mean_relative_error']:.1%}",
-        "Max rel. error": f"{m['max_relative_error']:.1%}",
+        "Train error": f"{m['train_mean_error']:.2%}",
+        "Test error": f"{m['test_mean_error']:.1%}",
         "Weight CV": f"{m['weight_cv']:.3f}",
         "Sparsity": f"{m['sparsity']:.1%}",
         "Time (s)": f"{m['elapsed_seconds']:.2f}",
     })
 df = pd.DataFrame(rows)
-df = df.sort_values("Mean rel. error")
+df = df.sort_values("Test error")
 df.index = range(1, len(df) + 1)
 df
 ```
 
-HardConcrete {cite:p}`louizos2018learning` achieves the lowest mean relative error ({eval}`r.rw_hardconcrete.mean_error_pct`) while using only {eval}`f"{1 - r.rw_hardconcrete.sparsity:.1%}"` of records ({eval}`r.rw_hardconcrete.sparsity_pct` sparsity). This method uses differentiable $L_0$ gates based on the Hard Concrete distribution to jointly optimize which records to keep and what weights to assign, implemented via the `l0-python` package. The initial weight rescaling described below is critical: without it, gradient descent fails to converge because survey weights (mean ~6,800) produce initial constraint violations of 5,000x or more.
+All calibration methods (IPF, entropy, SparseCalibrator) achieve near-zero training error — they satisfy the age and weight constraints exactly. The key comparison is test error on the held-out sex margin, which measures generalization. HardConcrete {cite:p}`louizos2018learning` achieves the lowest test error ({eval}`r.rw_hardconcrete.test_error_pct`) while using only {eval}`f"{1 - r.rw_hardconcrete.sparsity:.1%}"` of records ({eval}`r.rw_hardconcrete.sparsity_pct` sparsity). This method uses differentiable $L_0$ gates based on the Hard Concrete distribution to jointly optimize which records to keep and what weights to assign, implemented via the `l0-python` package. The initial weight rescaling described below is critical: without it, gradient descent fails to converge because survey weights (mean ~6,800) produce initial constraint violations of 5,000x or more.
 
-Among non-sparse calibration methods, entropy balancing achieves the lowest mean error ({eval}`r.rw_entropy.mean_error_pct`), {eval}`r.entropy_vs_ipf_error_reduction` lower than IPF ({eval}`r.rw_ipf.mean_error_pct`). SparseCalibrator matches IPF accuracy while producing {eval}`r.sparse_cal_cv_vs_ipf` lower weight coefficient of variation ({eval}`r.rw_sparse_cal.cv_str` vs. {eval}`r.rw_ipf.cv_str`), meaning smoother weights that are less likely to amplify noise in downstream estimates.
+Among dense calibration methods, entropy balancing and IPF achieve similar test error ({eval}`r.rw_entropy.test_error_pct` and {eval}`r.rw_ipf.test_error_pct` respectively). SparseCalibrator matches their accuracy while producing {eval}`r.sparse_cal_cv_vs_ipf` lower weight coefficient of variation ({eval}`r.rw_sparse_cal.cv_str` vs. {eval}`r.rw_ipf.cv_str`), meaning smoother weights that are less likely to amplify noise in downstream estimates.
 
-The $L_1$- and $L_0$-sparse methods show high errors ({eval}`r.rw_l1.mean_error_pct`) because they optimize for subset selection (minimizing $\|w\|_p$) rather than population calibration. They satisfy categorical constraints but cannot match continuous targets, making them unsuitable for general-purpose calibration despite their sparsity advantages. The $L_0$ method, which uses iterative reweighted $L_1$ (IRL1) to approximate the non-convex $L_0$ objective, converges to the $L_1$ solution for this problem, producing numerically identical results.
+The $L_1$- and $L_0$-sparse methods show substantially worse test error ({eval}`r.rw_l1.test_error_pct`) because they optimize for subset selection (minimizing $\|w\|_p$) rather than population calibration. Their extreme sparsity ({eval}`r.rw_l1.sparsity_pct`) concentrates weight on too few records to maintain representativeness on held-out dimensions. The $L_0$ method, which uses iterative reweighted $L_1$ (IRL1) to approximate the non-convex $L_0$ objective, converges to the $L_1$ solution for this problem, producing numerically identical results.
 
 HardConcrete's high weight CV ({eval}`r.rw_hardconcrete.cv_str`) reflects the concentration of weight on few records — an inherent property of sparse solutions. For applications requiring both sparse record selection and smooth weights, a two-stage approach (HardConcrete for record selection, then entropy balancing on the selected subset) may be preferable.
 
